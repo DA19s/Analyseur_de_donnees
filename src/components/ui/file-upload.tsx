@@ -5,14 +5,11 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { X, FileSpreadsheet, ArrowRight } from "lucide-react"
 import { useRouter } from "next/navigation"
+import { useFile } from "@/app/context/FileContext"
 
-interface ExcelFile extends File {
-  id: string
-  uploadedAt: Date
-}
 
 export default function ExcelUploadForm() {
-  const [file, setFile] = useState<ExcelFile | null>(null)
+const { file, setFile } = useFile()
   const [isDragOver, setIsDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
@@ -43,48 +40,13 @@ export default function ExcelUploadForm() {
   }
 
   const processFiles = (newFiles: File[]) => {
-    console.log(
-      "[v0] Files received:",
-      newFiles.map((f) => ({ name: f.name, type: f.type, size: f.size })),
+    const excelFiles = newFiles.filter((file) =>
+      file.name.toLowerCase().endsWith(".xlsx") || file.name.toLowerCase().endsWith(".xls")
     )
 
-    const excelFiles = newFiles.filter((file) => {
-      const isExcel =
-        file.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
-        file.type === "application/vnd.ms-excel" ||
-        file.name.toLowerCase().endsWith(".xlsx") ||
-        file.name.toLowerCase().endsWith(".xls")
-
-      console.log("[v0] File check:", file.name, "Type:", file.type, "Is Excel:", isExcel)
-      return isExcel
-    })
-
-    console.log("[v0] Excel files processed:", excelFiles.length)
-
     if (excelFiles.length > 0) {
-      const originalFile = excelFiles[0]
-      const selectedFile = {
-        name: originalFile.name,
-        size: originalFile.size,
-        type: originalFile.type,
-        lastModified: originalFile.lastModified,
-        stream: originalFile.stream.bind(originalFile),
-        text: originalFile.text.bind(originalFile),
-        arrayBuffer: originalFile.arrayBuffer.bind(originalFile),
-        slice: originalFile.slice.bind(originalFile),
-        id: Math.random().toString(36).substr(2, 9),
-        uploadedAt: new Date(),
-      } as ExcelFile
-
-      console.log("[v0] Created file object:", {
-        name: selectedFile.name,
-        size: selectedFile.size,
-        type: selectedFile.type,
-      })
-      setFile(selectedFile)
-    }
-
-    if (excelFiles.length === 0 && newFiles.length > 0) {
+      setFile(excelFiles[0]) // ✅ on garde le vrai File
+    } else if (newFiles.length > 0) {
       alert("Aucun fichier Excel valide détecté. Veuillez sélectionner un fichier .xlsx ou .xls")
     }
   }
@@ -97,21 +59,22 @@ export default function ExcelUploadForm() {
     fileInputRef.current?.click()
   }
 
-  const proceedToAnalysis = () => {
+  const proceedToAnalysis = async () => {
     if (!file) return
 
-    router.push("/analysis")
+    const formData = new FormData()
+    formData.append("file", file, file.name)
+    
+    router.push(`/variables`)
+
   }
 
   const formatFileSize = (bytes: number) => {
-    console.log("[v0] Formatting file size:", bytes, typeof bytes)
     if (!bytes || bytes === 0) return "0 Bytes"
     const k = 1024
     const sizes = ["Bytes", "KB", "MB", "GB"]
     const i = Math.floor(Math.log(bytes) / Math.log(k))
-    const result = Number.parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i]
-    console.log("[v0] Formatted size result:", result)
-    return result
+    return Number.parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i]
   }
 
   return (
@@ -160,7 +123,7 @@ export default function ExcelUploadForm() {
             <h4 className="text-lg font-semibold">Fichier sélectionné</h4>
             <Button onClick={proceedToAnalysis} className="bg-blue-600 hover:bg-blue-700">
               <ArrowRight className="h-4 w-4 mr-2" />
-              Procéder à l'analyse
+              Etape suivante
             </Button>
           </div>
 
@@ -181,7 +144,7 @@ export default function ExcelUploadForm() {
                 </div>
 
                 <p className="text-sm text-muted-foreground">
-                  {formatFileSize(file.size)} • Ajouté le {file.uploadedAt.toLocaleTimeString()}
+                  {formatFileSize(file.size)} • Ajouté le {new Date().toLocaleTimeString()}
                 </p>
               </div>
 
