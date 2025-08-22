@@ -24,7 +24,7 @@ const steps: Step[] = [
   {
     path: "/results",
     title: "Étape 3",
-    description: "Résultats"
+    description: "Résultat de la sélection"
   }
 ]
 
@@ -74,8 +74,8 @@ export default function StepProgress() {
               {/* Indicateur d'étape */}
               <div className="flex-shrink-0">
                 {isCompleted ? (
-                  <div className="w-5 h-5 bg-green-500 rounded-full flex items-center justify-center">
-                    <Check className="w-3 h-3 text-white" />
+                  <div className="w-5 h-5 bg-gray-300 rounded-full flex items-center justify-center">
+                    <Circle className="w-3 h-3 text-gray-500" />
                   </div>
                 ) : isCurrent ? (
                   <div className="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center animate-pulse">
@@ -91,14 +91,14 @@ export default function StepProgress() {
               {/* Contenu de l'étape */}
               <div className="flex-1 min-w-0">
                 <div className={`text-xs font-medium ${
-                  isCompleted ? 'text-green-600' : 
+                  isCompleted ? 'text-gray-500' : 
                   isCurrent ? 'text-blue-600' : 
                   'text-gray-500'
                 }`}>
                   {step.title}
                 </div>
                 <div className={`text-xs ${
-                  isCompleted ? 'text-green-500' : 
+                  isCompleted ? 'text-gray-400' : 
                   isCurrent ? 'text-blue-500' : 
                   'text-gray-400'
                 }`}>

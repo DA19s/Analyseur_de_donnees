@@ -5,11 +5,12 @@ export default function Home() {
   return (
     <div className=" bg-gradient-to-br from-blue-100 to-emerald-100 flex justify-center h-screen">
       <StepProgress />
-      <div className="absolute top-10 gap-6 flex flex-col items-center">
-      <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-500 to-emerald-500 bg-clip-text text-transparent">
-        Analyseur de données
+      <div className="absolute top-10 gap-2 flex flex-col items-center">
+      <h1 className="text-4xl font-bold bg-blue-500 bg-clip-text text-transparent">
+        Etape 1 : Upload du fichier à traiter
       </h1>
-      <p className=" text-lg bg-gradient-to-r from-emerald-500 to-emerald-600 bg-clip-text text-transparent">Téléchargez votre fichier Excel pour commencer le travail</p>
+      <p className=" text-lg bg-blue-400 bg-clip-text text-transparent"> Veuillez télécharger le fichier excel contenant les données </p>
+      <p className=" text-lg bg-blue-400 bg-clip-text text-transparent"> La première ligne du fichier doit contenir les noms des variables </p>
       </div>
 
 

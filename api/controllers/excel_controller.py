@@ -152,3 +152,32 @@ async def select_columns(filename: str, variables_explicatives: list[str], varia
             "total_selected_columns": int(len(selected_data))  # Nombre de colonnes avec données sélectionnées
         }
     }
+
+async def get_column_unique_values(filename: str, column_name: str):
+    if filename not in uploaded_files:
+        return {"error": "Fichier non trouvé. Faites d'abord /excel/preview."}
+    
+    df = uploaded_files[filename]
+    
+    if column_name not in df.columns:
+        return {"error": f"La colonne '{column_name}' n'existe pas dans {filename}"}
+    
+    # Récupérer toutes les valeurs uniques de la colonne
+    unique_values = df[column_name].dropna().unique()
+    
+    # Convertir en types Python natifs
+    converted_values = []
+    for val in unique_values:
+        if pd.isna(val):
+            converted_values.append(None)
+        elif isinstance(val, (np.integer, np.floating)):
+            converted_values.append(float(val) if isinstance(val, np.floating) else int(val))
+        else:
+            converted_values.append(str(val))
+    
+    return {
+        "filename": str(filename),
+        "column_name": str(column_name),
+        "unique_values": converted_values,
+        "total_unique_values": len(converted_values)
+    }

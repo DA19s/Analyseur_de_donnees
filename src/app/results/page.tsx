@@ -3,9 +3,96 @@
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { ArrowLeft, Home } from "lucide-react"
+import { ArrowLeft, Home, ChevronDown, ChevronRight } from "lucide-react"
 import { useEffect, useState } from "react"
 import StepProgress from "@/components/ui/step-progress"
+
+// Composant accordéon pour afficher les variables de manière dépliable
+function VariableAccordion({ 
+  columnName, 
+  values, 
+  color, 
+  icon 
+}: { 
+  columnName: string
+  values: any[]
+  color: 'blue' | 'purple' | 'green'
+  icon: string
+}) {
+  const [isExpanded, setIsExpanded] = useState(false)
+  
+  const colorClasses = {
+    blue: {
+      bg: 'bg-blue-50',
+      border: 'border-blue-200',
+      text: 'text-blue-800',
+      hover: 'hover:bg-blue-100',
+      iconBg: 'bg-blue-100',
+      iconText: 'text-blue-600'
+    },
+    green: {
+      bg: 'bg-green-50',
+      border: 'border-green-200',
+      text: 'text-green-800',
+      hover: 'hover:bg-green-100',
+      iconBg: 'bg-green-100',
+      iconText: 'text-green-600'
+    },
+    purple: {
+      bg: 'bg-purple-50',
+      border: 'border-purple-200',
+      text: 'text-purple-800',
+      hover: 'hover:bg-purple-100',
+      iconBg: 'bg-purple-100',
+      iconText: 'text-purple-600'
+    }
+  }
+  
+  const classes = colorClasses[color]
+  const uniqueValues = Array.from(new Set(values))
+
+  return (
+    <div className={`border rounded-lg overflow-hidden ${classes.border}`}>
+      {/* En-tête cliquable */}
+      <div 
+        className={`flex items-center justify-between p-4 cursor-pointer transition-colors ${classes.bg} ${classes.hover}`}
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        <div className="flex items-center">
+          <div className={`w-8 h-8 rounded-full flex items-center justify-center mr-3 ${classes.iconBg}`}>
+            <span className={`text-sm ${classes.iconText}`}>{icon}</span>
+          </div>
+          <div>
+            <h4 className={`font-medium ${classes.text}`}>{columnName}</h4>
+            <p className="text-sm text-gray-600">
+              {uniqueValues.length} élément(s) unique(s) sélectionné(s)
+            </p>
+          </div>
+        </div>
+        
+        {/* Icône d'expansion */}
+        {isExpanded ? (
+          <ChevronDown className="h-5 w-5 text-gray-500" />
+        ) : (
+          <ChevronRight className="h-5 w-5 text-gray-500" />
+        )}
+      </div>
+      
+      {/* Contenu dépliable */}
+      {isExpanded && (
+        <div className="p-4 bg-white border-t border-gray-200">
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
+            {uniqueValues.map((value, index) => (
+              <div key={index} className={`text-sm p-2 rounded border ${classes.bg}`}>
+                {String(value)}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 interface AnalysisResult {
   filename: string
@@ -54,6 +141,7 @@ export default function Results() {
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null)
   const [columnSelection, setColumnSelection] = useState<ColumnSelection>({})
   const [previewData, setPreviewData] = useState<PreviewData | null>(null)
+  const [selectedColumnValues, setSelectedColumnValues] = useState<{ [columnName: string]: any[] }>({})
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -67,6 +155,7 @@ export default function Results() {
         setAnalysisResult(data.analysisResult)
         setColumnSelection(data.columnSelection)
         setPreviewData(data.previewData)
+        setSelectedColumnValues(data.selectedColumnValues || {})
         setLoading(false)
       } catch (error) {
         console.error('Erreur lors du parsing des données:', error)
@@ -143,63 +232,89 @@ export default function Results() {
           </Button>
         </div>
 
-        <h1 className="text-4xl font-bold text-center mb-8 bg-gradient-to-r from-blue-500 to-emerald-500 bg-clip-text text-transparent">
-          Variables à analyser
+        <h1 className="text-4xl font-bold text-center mb-8 bg-blue-500 bg-clip-text text-transparent">
+          Etape 3 : Résultat de la sélection
         </h1>
 
-        {/* Résumé de la sélection */}
-        <Card className="mb-6 shadow-lg">
-          <CardHeader>
-            <CardTitle>📋 Variables sélectionnées</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <h4 className="font-semibold text-green-600 mb-2">Variables explicatives :</h4>
-                <ul className="space-y-1">
-                  {Object.keys(columnSelection || {}).filter(col => columnSelection[col].isExplanatory).map(col => (
-                    <li key={col} className="text-sm bg-green-50 p-2 rounded">• {col}</li>
-                  ))}
-                </ul>
-              </div>
-              <div>
-                <h4 className="font-semibold text-blue-600 mb-2">Variables à expliquer :</h4>
-                <ul className="space-y-1">
-                  {Object.keys(columnSelection || {}).filter(col => columnSelection[col].isToExplain).map(col => (
-                    <li key={col} className="text-sm bg-blue-50 p-2 rounded">• {col}</li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Données sélectionnées par l'utilisateur */}
-        {analysisResult.selected_data && Object.keys(analysisResult.selected_data).length > 0 && (
+        {/* Variables à expliquer et leurs éléments sélectionnés (dépliables) */}
+        {selectedColumnValues && Object.keys(selectedColumnValues).length > 0 && (
           <Card className="mb-6 shadow-lg">
             <CardHeader>
-              <CardTitle>🎯 Données sélectionnées pour l'analyse</CardTitle>
+              <CardTitle>🎯 Variables à expliquer et leurs éléments sélectionnés</CardTitle>
               <p className="text-sm text-gray-600">
-                Données des colonnes restantes choisies par l'utilisateur
+                Variables cibles avec leurs éléments spécifiques choisis (cliquez pour déplier)
               </p>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                {Object.entries(analysisResult.selected_data).map(([columnName, values]) => (
-                  <div key={columnName} className="border rounded-lg p-4">
-                    <h4 className="font-semibold text-purple-600 mb-2">📊 {columnName}</h4>
-                    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
-                      {Array.from(new Set(values)).map((value, index) => (
-                        <div key={index} className="text-sm bg-purple-50 p-2 rounded border">
-                          {String(value)}
-                        </div>
-                      ))}
+              <div className="space-y-3">
+                {Object.entries(selectedColumnValues).map(([columnName, values]) => (
+                  <VariableAccordion
+                    key={columnName}
+                    columnName={columnName}
+                    values={values}
+                    color="green"
+                    icon="🎯"
+                  />
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Variables explicatives */}
+        {Object.keys(columnSelection || {}).filter(col => columnSelection[col].isExplanatory).length > 0 && (
+          <Card className="mb-6 shadow-lg">
+            <CardHeader>
+              <CardTitle>🔍 Variables explicatives</CardTitle>
+              <p className="text-sm text-gray-600">
+                Variables utilisées pour expliquer ou prédire les variables cibles
+              </p>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                {Object.keys(columnSelection || {}).filter(col => columnSelection[col].isExplanatory).map(col => (
+                  <div key={col} className="flex items-center p-3 bg-blue-50 rounded-lg border border-blue-200">
+                    <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center mr-3">
+                      <span className="text-blue-600 text-sm">🔍</span>
                     </div>
-                    <p className="text-xs text-gray-500 mt-2">
-                      {Array.from(new Set(values)).length} valeur(s) unique(s) sélectionnée(s)
-                    </p>
+                    <div>
+                      <h4 className="font-medium text-blue-800">{col}</h4>
+                      <p className="text-sm text-blue-600">Variable explicative</p>
+                    </div>
                   </div>
                 ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Données des colonnes restantes sélectionnées */}
+        {analysisResult.selected_data && Object.keys(analysisResult.selected_data).length > 0 && (
+          <Card className="mb-6 shadow-lg">
+            <CardHeader>
+              <CardTitle>🔄 Données des colonnes restantes sélectionnées</CardTitle>
+              <p className="text-sm text-gray-600">
+                Données des colonnes restantes (ni explicatives, ni à expliquer) choisies par l'utilisateur
+              </p>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {Object.entries(analysisResult.selected_data)
+                  .filter(([columnName]) => {
+                    // Filtrer pour ne montrer que les colonnes qui ne sont ni explicatives ni à expliquer
+                    const isExplanatory = analysisResult.variables_explicatives.includes(columnName)
+                    const isToExplain = analysisResult.variables_a_expliquer.includes(columnName)
+                    return !isExplanatory && !isToExplain
+                  })
+                  .map(([columnName, values]) => (
+                    <VariableAccordion
+                      key={columnName}
+                      columnName={columnName}
+                      values={values}
+                      color="purple"
+                      icon="🔄"
+                    />
+                  ))}
               </div>
             </CardContent>
           </Card>

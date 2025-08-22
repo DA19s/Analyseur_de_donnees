@@ -42,3 +42,10 @@ async def select_columns(
         variables_a_expliquer_list,   # Passer la liste des variables à expliquer
         selected_data_dict  # Passer les données sélectionnées ou None
     )
+
+@router.post("/get-column-values")
+async def get_column_values(
+    filename: str = Form(...),
+    column_name: str = Form(...)
+):
+    return await excel_controller.get_column_unique_values(filename, column_name)

@@ -100,7 +100,7 @@ const { file, setFile } = useFile()
 
           <p className="text-muted-foreground mb-4">Glissez-déposez votre fichier Excel ou cliquez pour sélectionner</p>
 
-          <Button onClick={openFileDialog} className="mb-2 bg-emerald-600 hover:bg-emerald-700">
+          <Button onClick={openFileDialog} className="mb-2 bg-blue-400 hover:bg-blue-700">
             <FileSpreadsheet className="h-4 w-4 mr-2" />
             Sélectionner un fichier Excel
           </Button>
@@ -130,8 +130,8 @@ const { file, setFile } = useFile()
           <Card className="p-4">
             <div className="flex items-start gap-4">
               <div className="flex-shrink-0">
-                <div className="w-12 h-12 bg-emerald-100 rounded-lg flex items-center justify-center">
-                  <FileSpreadsheet className="h-6 w-6 text-emerald-600" />
+                <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                  <FileSpreadsheet className="h-6 w-6 text-blue-600" />
                 </div>
               </div>
 

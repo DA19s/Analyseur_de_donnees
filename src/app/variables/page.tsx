@@ -26,8 +26,8 @@ export default function Var() {
           </Button>
         </div>
 
-        <h1 className="text-4xl font-bold text-center mb-8 bg-gradient-to-r from-blue-500 to-emerald-500 bg-clip-text text-transparent">
-          Analyse des Variables
+        <h1 className="text-4xl font-bold text-center mb-8 bg-blue-500 bg-clip-text text-transparent">
+          Etape 2 : Sélection des Variables
         </h1>
         
         <ExcelPreview />
