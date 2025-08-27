@@ -91,7 +91,11 @@ function DataSelectionAccordion({
   )
 }
 
-export default function ExcelPreview() {
+interface ExcelPreviewProps {
+  onStepChange?: (step: number, title: string) => void
+}
+
+export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
   const { file } = useFile()
   const router = useRouter()
   const [previewData, setPreviewData] = useState<PreviewData | null>(null)
@@ -104,6 +108,7 @@ export default function ExcelPreview() {
   const [selectedRemainingData, setSelectedRemainingData] = useState<{ [columnName: string]: any[] }>({})
   const [step, setStep] = useState<'columns' | 'explanatory-variables' | 'remaining-data'>('columns')
   const [columnSearchTerm, setColumnSearchTerm] = useState('')
+  const [explanatorySearchTerm, setExplanatorySearchTerm] = useState('')
   const [dataSearchTerm, setDataSearchTerm] = useState('')
   
   // Nouveaux states pour gérer l'affichage des valeurs des colonnes
@@ -141,9 +146,16 @@ export default function ExcelPreview() {
     })
   }, [selectedColumnValues])
 
-  // Filtrer les colonnes basé sur la recherche
-  const filteredColumns = previewData?.columns.filter(column =>
-    column.toLowerCase().includes(columnSearchTerm.toLowerCase())
+  // Filtrer les colonnes pour les variables à expliquer
+  const filteredToExplainColumns = previewData?.columns.filter(column =>
+    column.toLowerCase().includes(columnSearchTerm.toLowerCase()) &&
+    !columnSelection[column]?.isExplanatory // Exclure les variables déjà explicatives
+  ) || []
+
+  // Filtrer les colonnes pour les variables explicatives
+  const filteredExplanatoryColumns = previewData?.columns.filter(column =>
+    column.toLowerCase().includes(explanatorySearchTerm.toLowerCase()) &&
+    !columnSelection[column]?.isToExplain // Exclure les variables déjà à expliquer
   ) || []
 
   // Filtrer les colonnes restantes basé sur la recherche
@@ -213,8 +225,16 @@ export default function ExcelPreview() {
     setColumnSelection(prev => {
       const newSelection = { ...prev }
       
-      // Permettre à une variable d'être à la fois explicative et à expliquer
-      newSelection[columnName][type === 'explanatory' ? 'isExplanatory' : 'isToExplain'] = checked
+      if (checked) {
+        // Si on coche une variable, décocher l'autre type
+        newSelection[columnName] = {
+          isExplanatory: type === 'explanatory',
+          isToExplain: type === 'toExplain'
+        }
+      } else {
+        // Si on décoche, juste décocher le type actuel
+        newSelection[columnName][type === 'explanatory' ? 'isExplanatory' : 'isToExplain'] = false
+      }
       
       return newSelection
     })
@@ -241,6 +261,9 @@ export default function ExcelPreview() {
           }
         }
       }
+      
+      // Mettre à jour le localStorage pour la progression
+      localStorage.setItem('remainingData', JSON.stringify(newSelection))
       
       return newSelection
     })
@@ -303,6 +326,25 @@ export default function ExcelPreview() {
 
   // Fonction pour gérer la sélection de la checkbox "Variable à expliquer"
   const handleVariableToExplainCheckbox = async (columnName: string, checked: boolean) => {
+    // Mettre à jour columnSelection pour exclure cette variable des variables explicatives
+    setColumnSelection(prev => {
+      const newSelection = { ...prev }
+      if (checked) {
+        // Si on coche, décocher des variables explicatives
+        newSelection[columnName] = {
+          isExplanatory: false,
+          isToExplain: true
+        }
+      } else {
+        // Si on décoche, juste décocher
+        newSelection[columnName] = {
+          ...newSelection[columnName],
+          isToExplain: false
+        }
+      }
+      return newSelection
+    })
+
     if (checked) {
       // Si on coche la checkbox, charger les valeurs si elles ne sont pas encore disponibles
       if (!columnValues[columnName]) {
@@ -357,6 +399,20 @@ export default function ExcelPreview() {
   }
 
   // Fonction pour gérer la sélection des valeurs individuelles
+  // Fonction pour gérer le retour en arrière avec notification de la page parent
+  const handleStepBack = (newStep: 'columns' | 'explanatory-variables') => {
+    setStep(newStep)
+    
+    // Notifier la page parent du changement d'étape
+    if (onStepChange) {
+      if (newStep === 'columns') {
+        onStepChange(2, "Sélection des variables à expliquer")
+      } else if (newStep === 'explanatory-variables') {
+        onStepChange(3, "Sélection des variables explicatives")
+      }
+    }
+  }
+
   const handleColumnValueSelection = (columnName: string, value: any, checked: boolean) => {
     setSelectedColumnValues(prev => {
       const newSelection = { ...prev }
@@ -377,6 +433,30 @@ export default function ExcelPreview() {
           delete newSelection[columnName]
         }
       }
+      
+      // Mettre à jour columnSelection pour exclure cette variable des variables explicatives
+      if (newSelection[columnName] && newSelection[columnName].length > 0) {
+        setColumnSelection(prev => ({
+          ...prev,
+          [columnName]: {
+            ...prev[columnName],
+            isToExplain: true,
+            isExplanatory: false // Exclure des variables explicatives
+          }
+        }))
+      } else {
+        // Si aucune valeur n'est sélectionnée, décocher
+        setColumnSelection(prev => ({
+          ...prev,
+          [columnName]: {
+            ...prev[columnName],
+            isToExplain: false
+          }
+        }))
+      }
+      
+      // Mettre à jour le localStorage pour la progression
+      localStorage.setItem('toExplainVariables', JSON.stringify(newSelection))
       
       return newSelection
     })
@@ -415,6 +495,12 @@ export default function ExcelPreview() {
       if (step === 'columns') {
         // Passer à l'étape de sélection des variables explicatives
         setStep('explanatory-variables')
+        // Notifier la page parent du changement d'étape
+        if (onStepChange) {
+          onStepChange(3, "Sélection des variables explicatives")
+        }
+        // Marquer l'étape 2 comme terminée
+        localStorage.setItem('toExplainVariables', JSON.stringify(variablesToExplain))
         setIsSubmitting(false)
       } else if (step === 'explanatory-variables') {
         // Vérifier qu'on a au moins une variable explicative
@@ -423,6 +509,9 @@ export default function ExcelPreview() {
           setIsSubmitting(false)
           return
         }
+
+        // Marquer l'étape 3 comme terminée
+        localStorage.setItem('explanatoryVariables', JSON.stringify(explanatoryVariables))
 
         // Premier appel : obtenir les colonnes restantes
         const formData = new FormData()
@@ -452,6 +541,10 @@ export default function ExcelPreview() {
         
         setRemainingData(result)
         setStep('remaining-data')
+        // Notifier la page parent du changement d'étape
+        if (onStepChange) {
+          onStepChange(4, "Définition de l'échantillon à traiter")
+        }
       } else if (step === 'remaining-data') {
         // Deuxième appel : envoyer les données sélectionnées
         // Inclure les valeurs sélectionnées des colonnes à expliquer
@@ -459,6 +552,9 @@ export default function ExcelPreview() {
           ...selectedRemainingData,
           ...selectedColumnValues
         }
+
+        // Marquer l'étape 4 comme terminée
+        localStorage.setItem('remainingData', JSON.stringify(finalSelectedData))
 
         const formData = new FormData()
         formData.append("filename", previewData.filename)
@@ -487,16 +583,49 @@ export default function ExcelPreview() {
         const result = await response.json()
         console.log("✅ Résultat final:", result)
         
-        // Stocker les données dans le localStorage
+        // Stocker les données dans le localStorage (version optimisée pour éviter le dépassement de quota)
         const dataToStore = {
           analysisResult: result,
           columnSelection: columnSelection,
-          previewData: previewData,
+          // Ne pas stocker previewData (trop volumineux)
+          filename: previewData.filename,
+          rows: previewData.rows,
+          columns: previewData.columns,
           remainingData: remainingData,
           selectedRemainingData: selectedRemainingData,
           selectedColumnValues: selectedColumnValues
         }
-        localStorage.setItem('excelAnalysisData', JSON.stringify(dataToStore))
+        
+        try {
+          localStorage.setItem('excelAnalysisData', JSON.stringify(dataToStore))
+          console.log("✅ Données stockées avec succès dans le localStorage")
+        } catch (storageError) {
+          console.warn("⚠️ Erreur de stockage localStorage, tentative de nettoyage et re-stockage...")
+          
+          // Nettoyer le localStorage et réessayer
+          try {
+            localStorage.clear()
+            localStorage.setItem('excelAnalysisData', JSON.stringify(dataToStore))
+            console.log("✅ Données stockées après nettoyage du localStorage")
+          } catch (finalError) {
+            console.error("❌ Impossible de stocker dans le localStorage:", finalError)
+            // Continuer sans stockage local
+          }
+        }
+        
+        // Notifier la page parent du changement d'étape finale
+        if (onStepChange) {
+          onStepChange(5, "Vérification des variables")
+        }
+        
+        // Afficher un résumé des données stockées
+        console.log("💾 Données stockées dans le localStorage:", {
+          variables_explicatives: result.variables_explicatives,
+          variables_a_expliquer: result.variables_a_expliquer,
+          selected_data_keys: Object.keys(result.selected_data || {}),
+          selected_column_values_keys: Object.keys(selectedColumnValues),
+          remaining_data_keys: Object.keys(selectedRemainingData)
+        })
         
         // Naviguer vers la page des résultats
         router.push('/results')
@@ -579,35 +708,37 @@ export default function ExcelPreview() {
   if (step === 'columns') {
     return (
       <div className="space-y-6">
-        {/* Informations du fichier */}
-        <Card className="shadow-lg">
-          <CardHeader>
-            <CardTitle className="text-2xl">📁 Fichier : {file.name}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-              <div className="text-center p-3 bg-blue-50 rounded-lg">
-                <div className="text-2xl font-bold text-blue-600">{previewData.rows}</div>
-                <div className="text-sm text-blue-600">Lignes</div>
+        {/* Informations du fichier - positionnées en haut à droite pour prendre le moins d'espace */}
+        <div className="fixed top-2 right-6">
+          <Card className="shadow-lg w-64">
+            <CardHeader className="pb-1">
+              <CardTitle className="text-xs">📁 {file.name}</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0 pb-1">
+              <div className="grid grid-cols-3 gap-0">
+                <div className="text-center p-0.5 bg-blue-50 rounded text-xs">
+                  <div className="font-bold text-blue-600">{previewData.rows}</div>
+                  <div className="text-blue-600">Lignes</div>
+                </div>
+                <div className="text-center p-1 bg-green-50 rounded text-xs">
+                  <div className="font-bold text-green-600">{previewData.columns.length}</div>
+                  <div className="text-green-600">Colonnes</div>
+                </div>
+                <div className="text-center p-0.5 bg-purple-50 rounded text-xs">
+                  <div className="font-bold text-purple-600">{(file.size / 1024).toFixed(1)} KB</div>
+                  <div className="text-purple-600">Taille</div>
+                </div>
               </div>
-              <div className="text-center p-3 bg-green-50 rounded-lg">
-                <div className="text-2xl font-bold text-green-600">{previewData.columns.length}</div>
-                <div className="text-sm text-green-600">Colonnes</div>
-              </div>
-              <div className="text-center p-3 bg-purple-50 rounded-lg">
-                <div className="text-lg font-bold text-purple-600">{(file.size / 1024).toFixed(2)} KB</div>
-                <div className="text-sm text-purple-600">Taille</div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </div>
 
-        {/* Sélection des colonnes */}
-        <Card className="shadow-lg">
+        {/* Sélection des colonnes - Section principale avec largeur d'origine */}
+        <Card className="shadow-lg ml-8">
           <CardHeader>
-            <CardTitle className="text-xl">📋 Sélection des variables</CardTitle>
+            <CardTitle className="text-xl">🎯 Sélection des variables à expliquer</CardTitle>
             <p className="text-sm text-gray-600">
-              ✅ Sélectionnez vos variables explicatives et vos variables à expliquer (plusieurs possibles)
+              ✅ Sélectionnez les colonnes que vous voulez expliquer ou prédire
             </p>
           </CardHeader>
           <CardContent>
@@ -629,12 +760,12 @@ export default function ExcelPreview() {
               </div>
               {columnSearchTerm && (
                 <p className="text-sm text-gray-500 mt-1">
-                  {filteredColumns.length} colonne(s) trouvée(s) sur {previewData?.columns.length}
+                  {filteredToExplainColumns.length} colonne(s) trouvée(s) sur {previewData?.columns.length}
                 </p>
               )}
             </div>
 
-            <div className="max-h-96 overflow-y-auto space-y-6 pr-2">
+            <div className="max-h-64 overflow-y-auto space-y-6 pr-2 min-w-0">
               {/* Section 1: Variables à expliquer */}
               <div className="space-y-3">
                 <h3 className="text-lg font-semibold text-gray-950 border-b border-gray-200 pb-2">
@@ -643,8 +774,8 @@ export default function ExcelPreview() {
                 <p className="text-sm text-gray-600 mb-3">
                   Cliquez sur une colonne pour la sélectionner et voir ses valeurs uniques
                 </p>
-                {filteredColumns.map((column, index) => (
-                  <div key={`toExplain-${index}`} className="border border-green-200 rounded-lg overflow-hidden">
+                {filteredToExplainColumns.map((column, index) => (
+                  <div key={`toExplain-${index}`} className="border border-green-200 rounded-lg overflow-hidden min-w-0">
                     {/* Bouton principal de la colonne */}
                     <div 
                       className={`flex items-center justify-between p-4 transition-colors ${
@@ -655,7 +786,7 @@ export default function ExcelPreview() {
                       onClick={() => handleColumnExpansion(column)}
                     >
                       <div className="flex-1">
-                        <h4 className="font-medium text-gray-900">{column}</h4>
+                        <h4 className="font-medium text-gray-900 break-words">{column}</h4>
                         <p className="text-sm text-gray-500">Colonne {index + 1}</p>
                         {columnSelection[column]?.isToExplain && (
                           <p className="text-xs text-green-600 mt-1">✅ Variable sélectionnée</p>
@@ -738,41 +869,7 @@ export default function ExcelPreview() {
                 ))}
               </div>
 
-              {/* Séparateur */}
-              <div className="border-t border-gray-300 my-6"></div>
 
-              {/* Section 2: Variables explicatives */}
-              <div className="space-y-3">
-                <h3 className="text-lg font-semibold text-blue-600 border-b border-blue-200 pb-2">
-                  🔍 Variables explicatives (Variables indépendantes)
-                </h3>
-                <p className="text-sm text-gray-600 mb-3">
-                  Sélectionnez les colonnes qui vont expliquer ou prédire vos variables cibles
-                </p>
-                {filteredColumns.map((column, index) => (
-                  <div key={`explanatory-${index}`} className="flex items-center justify-between p-4 border border-blue-200 rounded-lg hover:bg-blue-50">
-                    <div className="flex-1">
-                      <h4 className="font-medium text-gray-900">{column}</h4>
-                      <p className="text-sm text-gray-500">Colonne {index + 1}</p>
-                    </div>
-                    
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        id={`explanatory-${index}`}
-                        checked={columnSelection[column]?.isExplanatory || false}
-                        onChange={(e) => 
-                          handleColumnSelection(column, 'explanatory', e.target.checked)
-                        }
-                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                      />
-                      <label htmlFor={`explanatory-${index}`} className="text-sm font-medium text-blue-700">
-                        Variable explicative
-                      </label>
-                    </div>
-                  </div>
-                ))}
-              </div>
             </div>
             
             <div className="mt-6 pt-4 border-t">
@@ -787,7 +884,7 @@ export default function ExcelPreview() {
                     Analyse en cours...
                   </>
                 ) : (
-                  "🔍 Sélectionner les variables explicatives"
+                  "🚀 Passer à l'étape suivante"
                 )}
               </Button>
             </div>
@@ -801,31 +898,33 @@ export default function ExcelPreview() {
   if (step === 'explanatory-variables') {
     return (
       <div className="space-y-6">
-        {/* Informations du fichier */}
-        <Card className="shadow-lg">
-          <CardHeader>
-            <CardTitle className="text-2xl">📁 Fichier : {file.name}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-              <div className="text-center p-3 bg-blue-50 rounded-lg">
-                <div className="text-2xl font-bold text-blue-600">{previewData.rows}</div>
-                <div className="text-sm text-blue-600">Lignes</div>
+        {/* Informations du fichier - positionnées en haut à droite pour prendre le moins d'espace */}
+        <div className="fixed top-2 right-6">
+          <Card className="shadow-lg w-64">
+            <CardHeader className="pb-1">
+              <CardTitle className="text-xs">📁 {file.name}</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0 pb-1">
+              <div className="grid grid-cols-3 gap-0">
+                <div className="text-center p-0.5 bg-blue-50 rounded text-xs">
+                  <div className="font-bold text-blue-600">{previewData.rows}</div>
+                  <div className="text-blue-600">Lignes</div>
+                </div>
+                <div className="text-center p-0.5 bg-green-50 rounded text-xs">
+                  <div className="font-bold text-green-600">{previewData.columns.length}</div>
+                  <div className="text-green-600">Colonnes</div>
+                </div>
+                <div className="text-center p-0.5 bg-purple-50 rounded text-xs">
+                  <div className="font-bold text-purple-600">{(file.size / 1024).toFixed(1)} KB</div>
+                  <div className="text-purple-600">Taille</div>
+                </div>
               </div>
-              <div className="text-center p-3 bg-green-50 rounded-lg">
-                <div className="text-2xl font-bold text-green-600">{previewData.columns.length}</div>
-                <div className="text-sm text-green-600">Colonnes</div>
-              </div>
-              <div className="text-center p-3 bg-purple-50 rounded-lg">
-                <div className="text-lg font-bold text-purple-600">{(file.size / 1024).toFixed(2)} KB</div>
-                <div className="text-sm text-purple-600">Taille</div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </div>
 
-        {/* Sélection des variables explicatives */}
-        <Card className="shadow-lg">
+        {/* Sélection des variables explicatives - Section principale avec largeur d'origine */}
+        <Card className="shadow-lg ml-8">
           <CardHeader>
             <CardTitle className="text-xl">🔍 Sélection des variables explicatives</CardTitle>
             <p className="text-sm text-gray-600">
@@ -839,8 +938,8 @@ export default function ExcelPreview() {
                 <input
                   type="text"
                   placeholder="🔍 Rechercher une colonne..."
-                  value={columnSearchTerm}
-                  onChange={(e) => setColumnSearchTerm(e.target.value)}
+                  value={explanatorySearchTerm}
+                  onChange={(e) => setExplanatorySearchTerm(e.target.value)}
                   className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -849,18 +948,18 @@ export default function ExcelPreview() {
                   </svg>
                 </div>
               </div>
-              {columnSearchTerm && (
-                <p className="text-sm text-gray-500 mt-1">
-                  {filteredColumns.length} colonne(s) trouvée(s) sur {previewData?.columns.length}
-                </p>
-              )}
-            </div>
+                          {explanatorySearchTerm && (
+              <p className="text-sm text-gray-500 mt-1">
+                {filteredExplanatoryColumns.length} colonne(s) trouvée(s) sur {previewData?.columns.length}
+              </p>
+            )}
+          </div>
 
-            <div className="max-h-96 overflow-y-auto space-y-4 pr-2">
-              {filteredColumns.map((column, index) => (
-                <div key={`explanatory-${index}`} className="flex items-center justify-between p-4 border border-blue-200 rounded-lg hover:bg-blue-50">
+          <div className="max-h-64 overflow-y-auto space-y-4 pr-2">
+              {filteredExplanatoryColumns.map((column, index) => (
+                <div key={`explanatory-${index}`} className="flex items-center justify-between p-4 border border-blue-200 rounded-lg hover:bg-blue-50 min-w-0">
                   <div className="flex-1">
-                    <h4 className="font-medium text-gray-900">{column}</h4>
+                    <h4 className="font-medium text-gray-900 break-words">{column}</h4>
                     <p className="text-sm text-gray-500">Colonne {index + 1}</p>
                   </div>
                   
@@ -887,7 +986,7 @@ export default function ExcelPreview() {
         <div className="mt-6 pt-4 border-t">
           <div className="flex gap-4">
             <Button 
-              onClick={() => setStep('columns')} 
+              onClick={() => handleStepBack('columns')} 
               variant="outline" 
               className="flex-1"
             >
@@ -920,43 +1019,46 @@ export default function ExcelPreview() {
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
           <p>Chargement des colonnes restantes...</p>
           <Button 
-            onClick={() => setStep('columns')} 
+            onClick={() => handleStepBack('explanatory-variables')} 
             variant="outline" 
             className="mt-4"
           >
-            ← Retour à la sélection des colonnes
+            ← Retour à la sélection des variables explicatives
           </Button>
         </div>
       )
     }
 
     return (
-      <div className="space-y-6">
-        {/* Informations du fichier */}
-        <Card className="shadow-lg">
-          <CardHeader>
-            <CardTitle className="text-2xl">📁 Fichier : {file.name}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-              <div className="text-center p-3 bg-blue-50 rounded-lg">
-                <div className="text-2xl font-bold text-blue-600">{previewData.rows}</div>
-                <div className="text-sm text-blue-600">Lignes</div>
+      <div className="flex gap-6">
+        {/* Informations du fichier - positionnées en haut à droite pour prendre le moins d'espace */}
+        <div className="fixed top-2 right-6">
+          <Card className="shadow-lg w-64">
+            <CardHeader className="pb-1">
+              <CardTitle className="text-xs">📁 {file.name}</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0 pb-1">
+              <div className="grid grid-cols-3 gap-0">
+                <div className="text-center p-0.5 bg-blue-50 rounded text-xs">
+                  <div className="font-bold text-blue-600">{previewData.rows}</div>
+                  <div className="text-blue-600">Lignes</div>
+                </div>
+                <div className="text-center p-0.5 bg-green-50 rounded text-xs">
+                  <div className="font-bold text-green-600">{previewData.columns.length}</div>
+                  <div className="text-green-600">Colonnes</div>
+                </div>
+                <div className="text-center p-0.5 bg-purple-50 rounded text-xs">
+                  <div className="font-bold text-purple-600">{(file.size / 1024).toFixed(1)} KB</div>
+                  <div className="text-purple-600">Taille</div>
+                </div>
               </div>
-              <div className="text-center p-3 bg-green-50 rounded-lg">
-                <div className="text-2xl font-bold text-green-600">{previewData.columns.length}</div>
-                <div className="text-sm text-green-600">Colonnes</div>
-              </div>
-              <div className="text-center p-3 bg-purple-50 rounded-lg">
-                <div className="text-lg font-bold text-purple-600">{(file.size / 1024).toFixed(2)} KB</div>
-                <div className="text-sm text-purple-600">Taille</div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </div>
 
-        {/* Sélection des données des colonnes restantes */}
-        <Card className="shadow-lg">
+        {/* Sélection des données des colonnes restantes - Section principale */}
+        <div className="w-full ml-8">
+          <Card className="shadow-lg">
           <CardHeader>
             <CardTitle className="text-xl">🔄 Sélection des données à filtrer</CardTitle>
             <p className="text-sm text-gray-600">
@@ -987,7 +1089,7 @@ export default function ExcelPreview() {
               )}
             </div>
             
-            <div className="max-h-96 overflow-y-auto space-y-4 pr-2">
+            <div className="max-h-64 overflow-y-auto space-y-4 pr-2">
               {filteredRemainingColumns.map((columnName) => (
                 <DataSelectionAccordion
                   key={columnName}
@@ -1004,11 +1106,11 @@ export default function ExcelPreview() {
         <div className="mt-6 pt-4 border-t">
           <div className="flex gap-4">
             <Button 
-              onClick={() => setStep('columns')} 
+              onClick={() => handleStepBack('explanatory-variables')} 
               variant="outline" 
               className="flex-1"
             >
-              ← Retour à la sélection des colonnes
+              ← Retour à la sélection des variables explicatives
             </Button>
             <Button 
               onClick={handleSubmit}
@@ -1025,6 +1127,7 @@ export default function ExcelPreview() {
               )}
             </Button>
           </div>
+        </div>
         </div>
       </div>
     )

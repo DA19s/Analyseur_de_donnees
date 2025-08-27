@@ -3,12 +3,13 @@
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { ArrowLeft, Home, ChevronDown, ChevronRight } from "lucide-react"
+import { ArrowLeft, Home, TreePine, Loader2 } from "lucide-react"
 import { useEffect, useState } from "react"
 import StepProgress from "@/components/ui/step-progress"
+import DecisionTree from "@/components/ui/decision-tree"
 
-// Composant accordéon pour afficher les variables de manière dépliable
-function VariableAccordion({ 
+// Composant pour afficher les variables avec leurs modalités directement visibles
+function VariableDisplay({ 
   columnName, 
   values, 
   color, 
@@ -19,14 +20,11 @@ function VariableAccordion({
   color: 'blue' | 'purple' | 'green'
   icon: string
 }) {
-  const [isExpanded, setIsExpanded] = useState(false)
-  
   const colorClasses = {
     blue: {
       bg: 'bg-blue-50',
       border: 'border-blue-200',
       text: 'text-blue-800',
-      hover: 'hover:bg-blue-100',
       iconBg: 'bg-blue-100',
       iconText: 'text-blue-600'
     },
@@ -34,7 +32,6 @@ function VariableAccordion({
       bg: 'bg-green-50',
       border: 'border-green-200',
       text: 'text-green-800',
-      hover: 'hover:bg-green-100',
       iconBg: 'bg-green-100',
       iconText: 'text-green-600'
     },
@@ -42,7 +39,6 @@ function VariableAccordion({
       bg: 'bg-purple-50',
       border: 'border-purple-200',
       text: 'text-purple-800',
-      hover: 'hover:bg-purple-100',
       iconBg: 'bg-purple-100',
       iconText: 'text-purple-600'
     }
@@ -52,14 +48,10 @@ function VariableAccordion({
   const uniqueValues = Array.from(new Set(values))
 
   return (
-    <div className={`border rounded-lg overflow-hidden ${classes.border}`}>
-      {/* En-tête cliquable */}
-      <div 
-        className={`flex items-center justify-between p-4 cursor-pointer transition-colors ${classes.bg} ${classes.hover}`}
-        onClick={() => setIsExpanded(!isExpanded)}
-      >
+    <div className={`border rounded-lg p-4 ${classes.border} ${classes.bg}`}>
+      <div className="flex items-center justify-between">
         <div className="flex items-center">
-          <div className={`w-8 h-8 rounded-full flex items-center justify-center mr-3 ${classes.iconBg}`}>
+          <div className={`w-8 h-8 rounded-full flex items-center justify-center mr-3 flex-shrink-0 ${classes.iconBg}`}>
             <span className={`text-sm ${classes.iconText}`}>{icon}</span>
           </div>
           <div>
@@ -70,26 +62,15 @@ function VariableAccordion({
           </div>
         </div>
         
-        {/* Icône d'expansion */}
-        {isExpanded ? (
-          <ChevronDown className="h-5 w-5 text-gray-500" />
-        ) : (
-          <ChevronRight className="h-5 w-5 text-gray-500" />
-        )}
-      </div>
-      
-      {/* Contenu dépliable */}
-      {isExpanded && (
-        <div className="p-4 bg-white border-t border-gray-200">
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
-            {uniqueValues.map((value, index) => (
-              <div key={index} className={`text-sm p-2 rounded border ${classes.bg}`}>
-                {String(value)}
-              </div>
-            ))}
-          </div>
+        {/* Modalités affichées à droite */}
+        <div className="flex flex-wrap gap-2 ml-4">
+          {uniqueValues.map((value, index) => (
+            <div key={index} className={`text-xs px-2 py-1 rounded-full border ${classes.border} bg-white`}>
+              {String(value)}
+            </div>
+          ))}
         </div>
-      )}
+      </div>
     </div>
   )
 }
@@ -134,6 +115,17 @@ interface PreviewData {
   preview: Record<string, any>[]
 }
 
+interface DecisionTreeData {
+  filename: string
+  variables_explicatives: string[]
+  variables_a_expliquer: string[]
+  filtered_sample_size: number
+  original_sample_size: number
+  decision_trees: { [variable: string]: { [value: string]: any } }
+  pdf_base64?: string
+  pdf_generated?: boolean
+}
+
 export default function Results() {
   const router = useRouter()
   
@@ -142,6 +134,7 @@ export default function Results() {
   const [columnSelection, setColumnSelection] = useState<ColumnSelection>({})
   const [previewData, setPreviewData] = useState<PreviewData | null>(null)
   const [selectedColumnValues, setSelectedColumnValues] = useState<{ [columnName: string]: any[] }>({})
+  const [selectedRemainingData, setSelectedRemainingData] = useState<{ [columnName: string]: any[] }>({})
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -154,8 +147,27 @@ export default function Results() {
         console.log("📊 Données récupérées du localStorage:", data)
         setAnalysisResult(data.analysisResult)
         setColumnSelection(data.columnSelection)
-        setPreviewData(data.previewData)
+        
+        // Créer un objet previewData minimal à partir des données stockées
+        if (data.filename && data.rows && data.columns) {
+          setPreviewData({
+            filename: data.filename,
+            rows: data.rows,
+            columns: data.columns,
+            preview: [] // On n'a plus les données de prévisualisation complètes
+          })
+        }
+        
         setSelectedColumnValues(data.selectedColumnValues || {})
+        setSelectedRemainingData(data.selectedRemainingData || {})
+        
+        // Log pour déboguer
+        console.log("🔍 Données récupérées dans /results:", {
+          selectedRemainingData: data.selectedRemainingData,
+          selectedColumnValues: data.selectedColumnValues,
+          analysisResult: data.analysisResult
+        })
+        
         setLoading(false)
       } catch (error) {
         console.error('Erreur lors du parsing des données:', error)
@@ -215,7 +227,7 @@ export default function Results() {
 
   return (
     <div className="bg-gradient-to-br from-blue-100 to-emerald-100 min-h-screen p-8">
-      <StepProgress />
+      <StepProgress currentStep={5} />
       <div className="max-w-6xl mx-auto">
         {/* Navigation */}
         <div className="flex gap-2 mb-6">
@@ -233,7 +245,7 @@ export default function Results() {
         </div>
 
         <h1 className="text-4xl font-bold text-center mb-8 bg-blue-500 bg-clip-text text-transparent">
-          Etape 3 : Résultat de la sélection
+          Etape 5 : Vérification des variables
         </h1>
 
         {/* Variables à expliquer et leurs éléments sélectionnés (dépliables) */}
@@ -248,7 +260,7 @@ export default function Results() {
             <CardContent>
               <div className="space-y-3">
                 {Object.entries(selectedColumnValues).map(([columnName, values]) => (
-                  <VariableAccordion
+                  <VariableDisplay
                     key={columnName}
                     columnName={columnName}
                     values={values}
@@ -288,37 +300,80 @@ export default function Results() {
           </Card>
         )}
 
-        {/* Données des colonnes restantes sélectionnées */}
-        {analysisResult.selected_data && Object.keys(analysisResult.selected_data).length > 0 && (
+
+
+        {/* Modalités de l'échantillon sélectionnées */}
+        {selectedRemainingData && Object.keys(selectedRemainingData).length > 0 && (
           <Card className="mb-6 shadow-lg">
             <CardHeader>
-              <CardTitle>🔄 Données des colonnes restantes sélectionnées</CardTitle>
+              <CardTitle>📊 Modalités de l'échantillon sélectionnées</CardTitle>
               <p className="text-sm text-gray-600">
-                Données des colonnes restantes (ni explicatives, ni à expliquer) choisies par l'utilisateur
+                Données spécifiques sélectionnées pour filtrer l'échantillon d'analyse
               </p>
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {Object.entries(analysisResult.selected_data)
-                  .filter(([columnName]) => {
-                    // Filtrer pour ne montrer que les colonnes qui ne sont ni explicatives ni à expliquer
-                    const isExplanatory = analysisResult.variables_explicatives.includes(columnName)
-                    const isToExplain = analysisResult.variables_a_expliquer.includes(columnName)
-                    return !isExplanatory && !isToExplain
-                  })
-                  .map(([columnName, values]) => (
-                    <VariableAccordion
-                      key={columnName}
-                      columnName={columnName}
-                      values={values}
-                      color="purple"
-                      icon="🔄"
-                    />
-                  ))}
+                {Object.entries(selectedRemainingData).map(([columnName, values]) => (
+                  <VariableDisplay
+                    key={columnName}
+                    columnName={columnName}
+                    values={values}
+                    color="purple"
+                    icon="📊"
+                  />
+                ))}
+              </div>
+              <div className="mt-4 p-3 bg-purple-50 rounded-lg border border-purple-200">
+                <p className="text-sm text-purple-700">
+                  <strong>ℹ️ Information :</strong> Ces modalités filtrent votre échantillon d'analyse. 
+                  Plus la sélection est restrictive, moins l'arbre aura de variables explicatives disponibles.
+                </p>
               </div>
             </CardContent>
           </Card>
         )}
+
+        {/* Section Arbre de Décision */}
+        <Card className="mb-6 shadow-lg border-2 border-green-200">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center">
+                <TreePine className="h-8 w-8 text-green-600 mr-3" />
+                <CardTitle className="text-2xl text-green-800">🌳 Arbre de Décision</CardTitle>
+              </div>
+              <Button 
+                onClick={() => router.push('/decision-tree')}
+                className="bg-green-600 hover:bg-green-700 text-white"
+              >
+                <TreePine className="h-4 w-4 mr-2" />
+                Construire l'arbre
+              </Button>
+            </div>
+            <p className="text-sm text-gray-600">
+              Cliquez pour accéder à la page de construction de l'arbre de décision
+            </p>
+          </CardHeader>
+          <CardContent>
+            <div className="text-center py-8">
+              <TreePine className="h-16 w-16 text-green-300 mx-auto mb-4" />
+              <p className="text-lg text-green-700 mb-2">
+                Prêt à construire votre arbre de décision ?
+              </p>
+              <p className="text-sm text-gray-600 mb-4">
+                L'arbre analysera vos variables explicatives pour expliquer chaque valeur 
+                de vos variables à expliquer, en utilisant uniquement les données sélectionnées.
+              </p>
+              <div className="p-3 bg-green-50 rounded-lg max-w-md mx-auto">
+                <p className="text-sm text-green-700">
+                  <strong>🎯 Analyse ciblée :</strong> Seules les valeurs sélectionnées seront analysées<br/>
+                  <strong>🌿 Structure arborescente :</strong> Affichage clair avec branches gauche/droite<br/>
+                  <strong>📊 Pourcentages détaillés :</strong> Statistiques précises sur chaque branche<br/>
+                  <strong>📄 PDF téléchargeable :</strong> Rapport complet et structuré
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
       </div>
     </div>

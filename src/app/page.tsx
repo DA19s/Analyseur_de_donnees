@@ -4,7 +4,7 @@ import StepProgress from "@/components/ui/step-progress"
 export default function Home() {
   return (
     <div className=" bg-gradient-to-br from-blue-100 to-emerald-100 flex justify-center h-screen">
-      <StepProgress />
+      <StepProgress currentStep={1} />
       <div className="absolute top-10 gap-2 flex flex-col items-center">
       <h1 className="text-4xl font-bold bg-blue-500 bg-clip-text text-transparent">
         Etape 1 : Upload du fichier à traiter
