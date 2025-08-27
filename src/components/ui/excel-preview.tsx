@@ -421,7 +421,7 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
         newSelection[columnName] = []
       }
       
-      if (checked) {
+        if (checked) {
         // Ajouter la valeur
         if (!newSelection[columnName].includes(value)) {
           newSelection[columnName] = [...newSelection[columnName], value]
@@ -514,29 +514,29 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
         localStorage.setItem('explanatoryVariables', JSON.stringify(explanatoryVariables))
 
         // Premier appel : obtenir les colonnes restantes
-        const formData = new FormData()
-        formData.append("filename", previewData.filename)
-        formData.append("variables_explicatives", explanatoryVariables.join(','))
-        formData.append("variable_a_expliquer", variablesToExplain.join(','))
+      const formData = new FormData()
+      formData.append("filename", previewData.filename)
+      formData.append("variables_explicatives", explanatoryVariables.join(','))
+      formData.append("variable_a_expliquer", variablesToExplain.join(','))
 
-        console.log("📤 Envoi des données:", {
-          filename: previewData.filename,
-          variables_explicatives: explanatoryVariables,
-          variable_a_expliquer: variablesToExplain
-        })
+      console.log("📤 Envoi des données:", {
+        filename: previewData.filename,
+        variables_explicatives: explanatoryVariables,
+        variable_a_expliquer: variablesToExplain
+      })
 
-        const response = await fetch("http://localhost:8000/excel/select-columns", {
-          method: "POST",
-          body: formData,
-        })
+      const response = await fetch("http://localhost:8000/excel/select-columns", {
+        method: "POST",
+        body: formData,
+      })
 
-        if (!response.ok) {
-          const errorText = await response.text()
-          console.error("❌ Erreur API:", response.status, errorText)
-          throw new Error(`Erreur HTTP: ${response.status} - ${errorText}`)
-        }
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error("❌ Erreur API:", response.status, errorText)
+        throw new Error(`Erreur HTTP: ${response.status} - ${errorText}`)
+      }
 
-        const result = await response.json()
+      const result = await response.json()
         console.log("✅ Résultat select-columns (colonnes restantes):", result)
         
         setRemainingData(result)
@@ -584,9 +584,9 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
         console.log("✅ Résultat final:", result)
         
         // Stocker les données dans le localStorage (version optimisée pour éviter le dépassement de quota)
-        const dataToStore = {
-          analysisResult: result,
-          columnSelection: columnSelection,
+      const dataToStore = {
+        analysisResult: result,
+        columnSelection: columnSelection,
           // Ne pas stocker previewData (trop volumineux)
           filename: previewData.filename,
           rows: previewData.rows,
@@ -605,7 +605,7 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
           // Nettoyer le localStorage et réessayer
           try {
             localStorage.clear()
-            localStorage.setItem('excelAnalysisData', JSON.stringify(dataToStore))
+      localStorage.setItem('excelAnalysisData', JSON.stringify(dataToStore))
             console.log("✅ Données stockées après nettoyage du localStorage")
           } catch (finalError) {
             console.error("❌ Impossible de stocker dans le localStorage:", finalError)
@@ -626,9 +626,9 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
           selected_column_values_keys: Object.keys(selectedColumnValues),
           remaining_data_keys: Object.keys(selectedRemainingData)
         })
-        
-        // Naviguer vers la page des résultats
-        router.push('/results')
+      
+      // Naviguer vers la page des résultats
+      router.push('/results')
       }
     } catch (err) {
       console.error("❌ Erreur lors de la soumission:", err)
@@ -706,8 +706,8 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
 
   // Étape 1 : Sélection des colonnes
   if (step === 'columns') {
-    return (
-      <div className="space-y-6">
+  return (
+    <div className="space-y-6">
         {/* Informations du fichier - positionnées en haut à droite pour prendre le moins d'espace */}
         <div className="fixed top-2 right-6">
           <Card className="shadow-lg w-64">
@@ -735,13 +735,13 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
 
         {/* Sélection des colonnes - Section principale avec largeur d'origine */}
         <Card className="shadow-lg ml-8">
-          <CardHeader>
+        <CardHeader>
             <CardTitle className="text-xl">🎯 Sélection des variables à expliquer</CardTitle>
             <p className="text-sm text-gray-600">
               ✅ Sélectionnez les colonnes que vous voulez expliquer ou prédire
             </p>
-          </CardHeader>
-          <CardContent>
+        </CardHeader>
+        <CardContent>
             {/* Barre de recherche */}
             <div className="mb-4">
               <div className="relative">
@@ -917,21 +917,21 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
                 <div className="text-center p-0.5 bg-purple-50 rounded text-xs">
                   <div className="font-bold text-purple-600">{(file.size / 1024).toFixed(1)} KB</div>
                   <div className="text-purple-600">Taille</div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
         </div>
 
         {/* Sélection des variables explicatives - Section principale avec largeur d'origine */}
         <Card className="shadow-lg ml-8">
-          <CardHeader>
+        <CardHeader>
             <CardTitle className="text-xl">🔍 Sélection des variables explicatives</CardTitle>
-            <p className="text-sm text-gray-600">
+          <p className="text-sm text-gray-600">
               ✅ Sélectionnez les colonnes qui vont expliquer ou prédire vos variables cibles
-            </p>
-          </CardHeader>
-          <CardContent>
+          </p>
+        </CardHeader>
+        <CardContent>
             {/* Barre de recherche */}
             <div className="mb-4">
               <div className="relative">
@@ -961,8 +961,8 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
                   <div className="flex-1">
                     <h4 className="font-medium text-gray-900 break-words">{column}</h4>
                     <p className="text-sm text-gray-500">Colonne {index + 1}</p>
-                  </div>
-                  
+                </div>
+                
                   <div className="flex items-center space-x-2">
                     <input
                       type="checkbox"
@@ -976,14 +976,14 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
                     <label htmlFor={`explanatory-${index}`} className="text-sm font-medium text-blue-700">
                       Variable explicative
                     </label>
-                  </div>
                 </div>
-              ))}
-            </div>
+              </div>
+            ))}
+          </div>
           </CardContent>
         </Card>
-
-        <div className="mt-6 pt-4 border-t">
+          
+          <div className="mt-6 pt-4 border-t">
           <div className="flex gap-4">
             <Button 
               onClick={() => handleStepBack('columns')} 
@@ -1051,9 +1051,9 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
                   <div className="font-bold text-purple-600">{(file.size / 1024).toFixed(1)} KB</div>
                   <div className="text-purple-600">Taille</div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
+          </div>
+        </CardContent>
+      </Card>
         </div>
 
         {/* Sélection des données des colonnes restantes - Section principale */}
@@ -1129,9 +1129,9 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
           </div>
         </div>
         </div>
-      </div>
-    )
-  }
+    </div>
+  )
+}
 
   return null // Should not happen
 }

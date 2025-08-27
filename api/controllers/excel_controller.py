@@ -245,7 +245,6 @@ def calculate_percentage_variance(df: pd.DataFrame, explanatory_var: str, target
             return 0.0
             
     except Exception as e:
-        print(f"Erreur dans calculate_percentage_variance: {e}")
         return 0.0
 
 def select_best_explanatory_variable(df: pd.DataFrame, available_vars: List[str], 
@@ -253,9 +252,6 @@ def select_best_explanatory_variable(df: pd.DataFrame, available_vars: List[str]
     """
     Sélectionne la variable explicative avec le plus grand écart-type des pourcentages.
     """
-    print(f"🔍 Sélection de la meilleure variable explicative pour {target_var} = {target_value}")
-    print(f"   📊 Variables disponibles: {available_vars}")
-    
     best_var = None
     best_variance = -1
     
@@ -263,13 +259,11 @@ def select_best_explanatory_variable(df: pd.DataFrame, available_vars: List[str]
     for var in available_vars:
         variance = calculate_percentage_variance(df, var, target_var, target_value)
         var_variances[var] = variance
-        print(f"   📊 {var}: écart-type = {variance:.4f}")
     
     # Sélectionner la variable avec la plus grande variance
     if var_variances:
         best_var = max(var_variances, key=var_variances.get)
         best_variance = var_variances[best_var]
-        print(f"   🎯 Variable sélectionnée: {best_var} (écart-type: {best_variance:.4f})")
     
     return best_var, best_variance
 
@@ -282,26 +276,17 @@ def calculate_branch_percentages(df: pd.DataFrame, explanatory_var: str,
     de chaque valeur de la variable explicative, pas par rapport au total filtré.
     """
     try:
-        print(f"🔍 Calcul des branches pour {explanatory_var}")
-        print(f"   📊 DataFrame: {len(df)} lignes")
-        print(f"   📊 Variable cible: {target_var} = {target_value}")
-        
         # Obtenir toutes les valeurs uniques de la variable explicative dans le dataset complet
         all_explanatory_values = df[explanatory_var].dropna().unique()
-        print(f"   📊 Valeurs uniques de {explanatory_var}: {all_explanatory_values}")
         
         if len(all_explanatory_values) == 0:
-            print(f"   ❌ Aucune valeur unique trouvée")
             return {}
         
         branches = {}
         
         for explanatory_value in all_explanatory_values:
-            print(f"   🌿 Traitement de la valeur: {explanatory_value}")
-            
             # Nombre total d'accidents avec cette valeur explicative
             total_explanatory = len(df[df[explanatory_var] == explanatory_value])
-            print(f"      📊 Total avec {explanatory_var} = {explanatory_value}: {total_explanatory}")
             
             # Nombre d'accidents avec cette valeur explicative ET la valeur cible
             target_and_explanatory = len(
@@ -309,7 +294,6 @@ def calculate_branch_percentages(df: pd.DataFrame, explanatory_var: str,
                    (df[target_var] == target_value) & 
                    (df[target_var].notna())]
             )
-            print(f"      📊 Avec {explanatory_var} = {explanatory_value} ET {target_var} = {target_value}: {target_and_explanatory}")
             
             # Calculer le pourcentage
             if total_explanatory > 0:
@@ -319,15 +303,10 @@ def calculate_branch_percentages(df: pd.DataFrame, explanatory_var: str,
                     "percentage": round(percentage, 2),
                     "subtree": None  # Sera rempli récursivement
                 }
-                print(f"      ✅ Branche créée: {explanatory_value} → {percentage:.2f}%")
-            else:
-                print(f"      ❌ Pas de branche créée: total_explanatory = 0")
         
-        print(f"   📊 Branches créées: {list(branches.keys())}")
         return branches
         
     except Exception as e:
-        print(f"Erreur dans calculate_branch_percentages: {e}")
         return {}
 
 def construct_tree_for_value(df: pd.DataFrame, target_value: Any, target_var: str, 
@@ -338,13 +317,8 @@ def construct_tree_for_value(df: pd.DataFrame, target_value: Any, target_var: st
     if current_path is None:
         current_path = []
     
-    print(f"🌳 Construction de l'arbre pour {target_var} = {target_value}")
-    print(f"   📊 Variables explicatives disponibles: {available_explanatory_vars}")
-    print(f"   📊 Chemin actuel: {current_path}")
-    
     # Critère d'arrêt : plus de variables explicatives disponibles
     if not available_explanatory_vars:
-        print(f"   🍃 Plus de variables explicatives disponibles - création d'une feuille")
         return {
             "type": "leaf",
             "message": "Plus de variables explicatives disponibles"
@@ -356,7 +330,6 @@ def construct_tree_for_value(df: pd.DataFrame, target_value: Any, target_var: st
     )
     
     if best_var is None:
-        print(f"   ❌ Aucune variable explicative valide trouvée")
         return {
             "type": "leaf",
             "message": "Aucune variable explicative valide trouvée"
@@ -376,14 +349,9 @@ def construct_tree_for_value(df: pd.DataFrame, target_value: Any, target_var: st
     
     # Variables explicatives restantes pour les sous-arbres
     remaining_vars = [var for var in available_explanatory_vars if var != best_var]
-    print(f"   🔄 Variables restantes pour les sous-arbres: {remaining_vars}")
     
     # Construire récursivement les sous-arbres pour chaque branche
     for branch_value, branch_data in branches.items():
-        print(f"   🌿 Traitement de la branche: {best_var} = {branch_value}")
-        print(f"      🔍 DataFrame reçu: {len(df)} lignes")
-        print(f"      🔍 Valeur recherchée: {best_var} = {branch_value}")
-        
         # Filtrer le DataFrame pour cette branche
         # Convertir branch_value en type approprié pour la comparaison
         if branch_value == 'False':
@@ -393,25 +361,16 @@ def construct_tree_for_value(df: pd.DataFrame, target_value: Any, target_var: st
         else:
             branch_value_converted = branch_value
         
-        print(f"      🔍 Valeur convertie: {branch_value} → {branch_value_converted} (type: {type(branch_value_converted)})")
-        
         branch_mask = (df[best_var] == branch_value_converted) & (df[best_var].notna())
         filtered_df = df[branch_mask]
         
-        print(f"      📊 Lignes filtrées pour cette branche: {len(filtered_df)}")
-        print(f"      🔍 Valeurs uniques de {best_var} dans le DataFrame: {df[best_var].dropna().unique()}")
-        print(f"      🔍 Masque de filtrage: {branch_mask.sum()} lignes True")
-        
         if len(filtered_df) > 0 and remaining_vars:
-            print(f"      🔄 Construction du sous-arbre récursif...")
             # Construire le sous-arbre récursivement
             subtree = construct_tree_for_value(
                 filtered_df, target_value, target_var, 
                 remaining_vars, current_path + [best_var, branch_value]
             )
             branch_data["subtree"] = subtree
-        else:
-            print(f"      ⚠️ Pas de sous-arbre: lignes={len(filtered_df)}, variables_restantes={len(remaining_vars)}")
     
     return tree_node
 
@@ -426,7 +385,6 @@ async def build_decision_tree(filename: str, variables_explicatives: List[str],
     df = uploaded_files[filename]
     
     # Étape 1: Filtrer l'échantillon initial basé sur les variables restantes sélectionnées
-    print("🔄 Étape 1: Filtrage de l'échantillon initial...")
     
     # Identifier les colonnes restantes (ni explicatives ni à expliquer)
     all_columns = variables_explicatives + variables_a_expliquer
@@ -435,64 +393,32 @@ async def build_decision_tree(filename: str, variables_explicatives: List[str],
     # Filtrer pour les variables restantes sélectionnées
     initial_mask = pd.Series([True] * len(df), index=df.index)
     
-    print(f"🔍 Variables restantes disponibles: {remaining_columns}")
-    print(f"🔍 Données sélectionnées par l'utilisateur: {selected_data}")
-    
     for col_name, selected_values in selected_data.items():
         if col_name in remaining_columns and selected_values:
             col_mask = df[col_name].isin(selected_values)
             initial_mask = initial_mask & col_mask
-            print(f"✅ Filtrage pour {col_name} = {selected_values}: {len(df[col_mask])} lignes conservées")
-        else:
-            print(f"⚠️ {col_name} ignoré: dans remaining_columns={col_name in remaining_columns}, selected_values={bool(selected_values)}")
     
     filtered_df = df[initial_mask].copy()
-    print(f"✅ Échantillon initial filtré: {len(filtered_df)} lignes sur {len(df)}")
-    
-    # Vérifier les valeurs des variables explicatives dans l'échantillon filtré
-    print(f"🔍 Vérification des variables explicatives dans l'échantillon filtré:")
-    for var in variables_explicatives:
-        unique_values = filtered_df[var].dropna().unique()
-        print(f"   📊 {var}: {unique_values} ({len(unique_values)} valeurs uniques)")
     
     # Analyser l'impact du filtrage sur les variables explicatives
     filtering_analysis = analyze_sample_filtering_impact(df, filtered_df, variables_explicatives)
     
-    # Afficher les avertissements et suggestions
-    if filtering_analysis["warnings"]:
-        print(f"\n⚠️ AVERTISSEMENTS:")
-        for warning in filtering_analysis["warnings"]:
-            print(f"  {warning}")
-    
-    if filtering_analysis["suggestions"]:
-        print(f"\n💡 SUGGESTIONS:")
-        for suggestion in filtering_analysis["suggestions"]:
-            print(f"  {suggestion}")
-    
     # Étape 2: Construire l'arbre pour chaque variable à expliquer
-    print("🔄 Étape 2: Construction des arbres de décision...")
     
     decision_trees = {}
-    total_trees = len(variables_a_expliquer)
     
-    for i, target_var in enumerate(variables_a_expliquer):
-        print(f"🌳 Construction de l'arbre {i+1}/{total_trees} pour {target_var}...")
-        
+    for target_var in variables_a_expliquer:
         # IMPORTANT: Utiliser seulement les valeurs SÉLECTIONNÉES, pas toutes les valeurs uniques
         if target_var in selected_data and selected_data[target_var]:
             # Utiliser les valeurs sélectionnées par l'utilisateur
             target_values = selected_data[target_var]
-            print(f"   📊 {len(target_values)} valeur(s) SÉLECTIONNÉE(S) utilisée(s)")
         else:
             # Fallback: utiliser toutes les valeurs uniques si aucune sélection
             target_values = filtered_df[target_var].dropna().unique()
-            print(f"   📊 {len(target_values)} valeur(s) uniques trouvée(s) (aucune sélection)")
         
         target_trees = {}
         
-        for j, target_value in enumerate(target_values):
-            print(f"   🎯 Traitement de la valeur {j+1}/{len(target_values)}: {target_value}")
-            
+        for target_value in target_values:
             # Construire l'arbre pour cette valeur
             tree = construct_tree_for_value(
                 filtered_df, target_value, target_var, 
@@ -502,9 +428,6 @@ async def build_decision_tree(filename: str, variables_explicatives: List[str],
             target_trees[str(target_value)] = tree
         
         decision_trees[target_var] = target_trees
-        print(f"✅ Arbre terminé pour {target_var}")
-    
-    print("🎉 Construction de tous les arbres terminée !")
     
     return {
         "filename": filename,
@@ -627,7 +550,6 @@ def generate_tree_pdf(decision_trees: Dict[str, Any], filename: str) -> str:
                     
                     story.append(Spacer(1, 10))
             except Exception as e:
-                print(f"Erreur dans add_tree_to_story: {e}")
                 story.append(Paragraph(f"❌ Erreur lors de l'affichage du nœud", styles['Normal']))
         
         # Pour chaque variable à expliquer
@@ -646,12 +568,10 @@ def generate_tree_pdf(decision_trees: Dict[str, Any], filename: str) -> str:
                         add_tree_to_story(tree, 0, target_value)
                         story.append(Spacer(1, 20))
                     except Exception as e:
-                        print(f"Erreur lors du traitement de la valeur {target_value}: {e}")
                         story.append(Paragraph(f"❌ Erreur lors du traitement de la valeur {target_value}", styles['Normal']))
                 
                 story.append(Spacer(1, 25))
             except Exception as e:
-                print(f"Erreur lors du traitement de la variable {target_var}: {e}")
                 story.append(Paragraph(f"❌ Erreur lors du traitement de la variable {target_var}", styles['Normal']))
         
         # Construire le PDF
@@ -667,9 +587,6 @@ def generate_tree_pdf(decision_trees: Dict[str, Any], filename: str) -> str:
         return pdf_base64
         
     except Exception as e:
-        print(f"Erreur lors de la génération du PDF: {e}")
-        import traceback
-        traceback.print_exc()
         return ""
 
 async def build_decision_tree_with_pdf(filename: str, variables_explicatives: List[str], 
@@ -684,16 +601,13 @@ async def build_decision_tree_with_pdf(filename: str, variables_explicatives: Li
         return tree_result
     
     # Générer le PDF
-    print("📄 Génération du PDF...")
     pdf_base64 = generate_tree_pdf(tree_result["decision_trees"], filename)
     
     if pdf_base64:
         tree_result["pdf_base64"] = pdf_base64
         tree_result["pdf_generated"] = True
-        print("✅ PDF généré avec succès")
     else:
         tree_result["pdf_generated"] = False
-        print("❌ Erreur lors de la génération du PDF")
     
     return tree_result
 
@@ -706,16 +620,9 @@ def analyze_sample_filtering_impact(df: pd.DataFrame, filtered_df: pd.DataFrame,
     warnings = []
     suggestions = []
     
-    print(f"\n🔍 Analyse de l'impact du filtrage sur les variables explicatives...")
-    print(f"  📊 Échantillon original: {len(df)} lignes")
-    print(f"  📊 Échantillon filtré: {len(filtered_df)} lignes")
-    print(f"  📊 Réduction: {((len(df) - len(filtered_df)) / len(df) * 100):.1f}%")
-    
     for var in variables_explicatives:
         original_unique = df[var].nunique()
         filtered_unique = filtered_df[var].nunique()
-        
-        print(f"  📊 {var}: {original_unique} → {filtered_unique} valeurs uniques")
         
         if filtered_unique == 1:
             warnings.append(f"⚠️ Variable '{var}' n'a plus qu'une seule valeur unique dans l'échantillon filtré")

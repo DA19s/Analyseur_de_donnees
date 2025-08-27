@@ -62,9 +62,9 @@ export default function DecisionTreePage() {
     if (!storedData) return
 
     const data = JSON.parse(storedData)
-    const { analysisResult, previewData, selectedColumnValues } = data
+    const { analysisResult, filename, selectedColumnValues } = data
 
-    if (!analysisResult || !previewData) return
+    if (!analysisResult || !filename) return
 
     setBuildingTree(true)
     setTreeError(null)
@@ -72,7 +72,7 @@ export default function DecisionTreePage() {
     try {
       // Préparer les données pour l'API
       const formData = new FormData()
-      formData.append("filename", previewData.filename)
+      formData.append("filename", filename)
       formData.append("variables_explicatives", analysisResult.variables_explicatives.join(','))
       formData.append("variable_a_expliquer", analysisResult.variables_a_expliquer.join(','))
       
@@ -82,14 +82,6 @@ export default function DecisionTreePage() {
         ...selectedColumnValues
       }
       formData.append("selected_data", JSON.stringify(allSelectedData))
-
-      console.log("🌳 Construction de l'arbre de décision...")
-      console.log("📤 Données envoyées:", {
-        filename: previewData.filename,
-        variables_explicatives: analysisResult.variables_explicatives,
-        variable_a_expliquer: analysisResult.variables_a_expliquer,
-        selected_data: allSelectedData
-      })
 
       const response = await fetch("http://localhost:8000/excel/build-decision-tree", {
         method: "POST",
@@ -102,7 +94,6 @@ export default function DecisionTreePage() {
       }
 
       const result = await response.json()
-      console.log("✅ Arbre de décision construit:", result)
 
       if (result.error) {
         throw new Error(result.error)
@@ -169,7 +160,7 @@ export default function DecisionTreePage() {
               <Button 
                 onClick={buildDecisionTree}
                 disabled={buildingTree}
-                className="bg-blue-600 hover:bg-blue-700 text-white"
+                className="bg-green-600 hover:bg-green-700 text-white"
               >
                 {buildingTree ? (
                   <>
