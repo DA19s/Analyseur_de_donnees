@@ -212,7 +212,7 @@ def calculate_percentage_variance(df: pd.DataFrame, explanatory_var: str, target
         if len(filtered_df) == 0:
             return 0.0
         
-        # Obtenir toutes les valeurs uniques de la variable explicative dans le dataset complet
+        # Obtenir toutes les valeurs uniques de la variable explicative dans le dataset filtré
         all_explanatory_values = df[explanatory_var].dropna().unique()
         
         if len(all_explanatory_values) == 0:
@@ -276,7 +276,9 @@ def calculate_branch_percentages(df: pd.DataFrame, explanatory_var: str,
     de chaque valeur de la variable explicative, pas par rapport au total filtré.
     """
     try:
-        # Obtenir toutes les valeurs uniques de la variable explicative dans le dataset complet
+
+        
+        # Obtenir toutes les valeurs uniques de la variable explicative dans le dataset filtré
         all_explanatory_values = df[explanatory_var].dropna().unique()
         
         if len(all_explanatory_values) == 0:
@@ -395,7 +397,20 @@ async def build_decision_tree(filename: str, variables_explicatives: List[str],
     
     for col_name, selected_values in selected_data.items():
         if col_name in remaining_columns and selected_values:
-            col_mask = df[col_name].isin(selected_values)
+            # Conversion automatique des types pour la correspondance
+            converted_values = []
+            for val in selected_values:
+                if isinstance(val, str):
+                    if val.lower() == 'true':
+                        converted_values.append(True)
+                    elif val.lower() == 'false':
+                        converted_values.append(False)
+                    else:
+                        converted_values.append(val)
+                else:
+                    converted_values.append(val)
+            
+            col_mask = df[col_name].isin(converted_values)
             initial_mask = initial_mask & col_mask
     
     filtered_df = df[initial_mask].copy()

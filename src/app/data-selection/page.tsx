@@ -146,25 +146,25 @@ export default function DataSelection() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-100 to-emerald-100 p-8">
-      <StepProgress />
+    <div className="min-h-screen bg-gradient-to-br from-yellow-100 to-orange-100 p-8">
+      <StepProgress currentStep={4} />
       <div className="max-w-6xl mx-auto">
         {/* Navigation */}
         <div className="flex gap-2 mb-6">
-          <Button variant="outline" onClick={() => router.push('/variables')}>
+          <Button variant="outline" onClick={() => router.push('/variables')} className="border-yellow-300 text-yellow-700 hover:bg-yellow-50">
             <ArrowLeft className="h-4 w-4 mr-2" />
             Retour aux variables
           </Button>
           <Button variant="outline" onClick={() => {
             localStorage.removeItem('excelAnalysisData')
             router.push('/')
-          }}>
+          }} className="border-yellow-300 text-yellow-700 hover:bg-yellow-50">
             <Home className="h-4 w-4 mr-2" />
             Accueil
           </Button>
         </div>
 
-        <h1 className="text-4xl font-bold text-center mb-8 bg-gradient-to-r from-blue-500 to-emerald-500 bg-clip-text text-transparent">
+        <h1 className="text-4xl font-bold text-center mb-8 bg-gradient-to-r from-yellow-500 to-orange-500 bg-clip-text text-transparent">
           Sélection des données
         </h1>
 
@@ -176,10 +176,10 @@ export default function DataSelection() {
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <h4 className="font-semibold text-green-600 mb-2">Variables explicatives :</h4>
+                <h4 className="font-semibold text-yellow-600 mb-2">Variables explicatives :</h4>
                 <ul className="space-y-1">
                   {remainingData.variables_explicatives.map((col, index) => (
-                    <li key={index} className="text-sm bg-green-50 p-2 rounded">• {col}</li>
+                    <li key={index} className="text-sm bg-yellow-50 p-2 rounded">• {col}</li>
                   ))}
                 </ul>
               </div>
@@ -260,7 +260,7 @@ export default function DataSelection() {
         <div className="mt-6 pt-4 border-t">
           <Button 
             onClick={handleSubmit}
-            className="w-full bg-green-600 hover:bg-green-700 text-lg py-3"
+                          className="w-full bg-yellow-600 hover:bg-yellow-700 text-lg py-3"
           >
             🚀 Lancer l'analyse finale
           </Button>

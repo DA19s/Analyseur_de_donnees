@@ -734,13 +734,13 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
         </div>
 
         {/* Sélection des colonnes - Section principale avec largeur d'origine */}
-        <Card className="shadow-lg ml-8">
-        <CardHeader>
-            <CardTitle className="text-xl">🎯 Sélection des variables à expliquer</CardTitle>
-            <p className="text-sm text-gray-600">
+                <Card className="shadow-lg ml-8 border-2 border-green-200">
+          <CardHeader className="bg-green-50">
+            <CardTitle className="text-xl text-green-800">🎯 Sélection des variables à expliquer</CardTitle>
+            <p className="text-sm text-green-600">
               ✅ Sélectionnez les colonnes que vous voulez expliquer ou prédire
             </p>
-        </CardHeader>
+          </CardHeader>
         <CardContent>
             {/* Barre de recherche */}
             <div className="mb-4">
@@ -894,7 +894,7 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
     )
   }
 
-  // Étape 2 : Sélection des variables explicatives
+    // Étape 2 : Sélection des variables explicatives
   if (step === 'explanatory-variables') {
     return (
       <div className="space-y-6">
@@ -910,27 +910,27 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
                   <div className="font-bold text-blue-600">{previewData.rows}</div>
                   <div className="text-blue-600">Lignes</div>
                 </div>
-                <div className="text-center p-0.5 bg-green-50 rounded text-xs">
-                  <div className="font-bold text-green-600">{previewData.columns.length}</div>
-                  <div className="text-green-600">Colonnes</div>
+                <div className="text-center p-0.5 bg-blue-50 rounded text-xs">
+                  <div className="font-bold text-blue-600">{previewData.columns.length}</div>
+                  <div className="text-blue-600">Colonnes</div>
                 </div>
                 <div className="text-center p-0.5 bg-purple-50 rounded text-xs">
                   <div className="font-bold text-purple-600">{(file.size / 1024).toFixed(1)} KB</div>
                   <div className="text-purple-600">Taille</div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Sélection des variables explicatives - Section principale avec largeur d'origine */}
-        <Card className="shadow-lg ml-8">
-        <CardHeader>
-            <CardTitle className="text-xl">🔍 Sélection des variables explicatives</CardTitle>
-          <p className="text-sm text-gray-600">
+                <Card className="shadow-lg ml-8 border-2 border-blue-200">
+          <CardHeader className="bg-blue-50">
+            <CardTitle className="text-xl text-blue-800">🔍 Sélection des variables explicatives</CardTitle>
+            <p className="text-sm text-blue-600">
               ✅ Sélectionnez les colonnes qui vont expliquer ou prédire vos variables cibles
-          </p>
-        </CardHeader>
+            </p>
+          </CardHeader>
         <CardContent>
             {/* Barre de recherche */}
             <div className="mb-4">
@@ -988,7 +988,7 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
             <Button 
               onClick={() => handleStepBack('columns')} 
               variant="outline" 
-              className="flex-1"
+              className="flex-1 border-green-300 text-green-700 hover:bg-green-50"
             >
               ← Retour à la sélection des variables à expliquer
             </Button>
@@ -1031,7 +1031,7 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
 
     return (
       <div className="flex gap-6">
-        {/* Informations du fichier - positionnées en haut à droite pour prendre le moins d'espace */}
+                {/* Informations du fichier - positionnées en haut à droite pour prendre le moins d'espace */}
         <div className="fixed top-2 right-6">
           <Card className="shadow-lg w-64">
             <CardHeader className="pb-1">
@@ -1043,25 +1043,25 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
                   <div className="font-bold text-blue-600">{previewData.rows}</div>
                   <div className="text-blue-600">Lignes</div>
                 </div>
-                <div className="text-center p-0.5 bg-green-50 rounded text-xs">
-                  <div className="font-bold text-green-600">{previewData.columns.length}</div>
-                  <div className="text-green-600">Colonnes</div>
+                <div className="text-center p-0.5 bg-yellow-50 rounded text-xs">
+                  <div className="font-bold text-yellow-600">{previewData.columns.length}</div>
+                  <div className="text-yellow-600">Colonnes</div>
                 </div>
                 <div className="text-center p-0.5 bg-purple-50 rounded text-xs">
                   <div className="font-bold text-purple-600">{(file.size / 1024).toFixed(1)} KB</div>
                   <div className="text-purple-600">Taille</div>
                 </div>
-          </div>
-        </CardContent>
-      </Card>
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Sélection des données des colonnes restantes - Section principale */}
         <div className="w-full ml-8">
-          <Card className="shadow-lg">
-          <CardHeader>
-            <CardTitle className="text-xl">🔄 Sélection des données à filtrer</CardTitle>
-            <p className="text-sm text-gray-600">
+          <Card className="shadow-lg border-2 border-yellow-200">
+          <CardHeader className="bg-yellow-50">
+            <CardTitle className="text-xl text-yellow-800">🔄 Sélection des données à filtrer</CardTitle>
+            <p className="text-sm text-yellow-600">
               Sélectionnez les données des colonnes restantes sur lesquelles vous voulez travailler
             </p>
           </CardHeader>
@@ -1074,7 +1074,7 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
                   placeholder="🔍 Rechercher une colonne..."
                   value={dataSearchTerm}
                   onChange={(e) => setDataSearchTerm(e.target.value)}
-                  className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
                 />
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1108,14 +1108,14 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
             <Button 
               onClick={() => handleStepBack('explanatory-variables')} 
               variant="outline" 
-              className="flex-1"
+              className="flex-1 border-yellow-300 text-yellow-700 hover:bg-yellow-50"
             >
               ← Retour à la sélection des variables explicatives
             </Button>
             <Button 
               onClick={handleSubmit}
               disabled={isSubmitting}
-              className="flex-1 bg-purple-600 hover:bg-purple-700 text-lg py-3"
+              className="flex-1 bg-yellow-600 hover:bg-yellow-700 text-lg py-3"
             >
               {isSubmitting ? (
                 <>

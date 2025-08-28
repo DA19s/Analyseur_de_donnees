@@ -76,11 +76,20 @@ export default function DecisionTreePage() {
       formData.append("variables_explicatives", analysisResult.variables_explicatives.join(','))
       formData.append("variable_a_expliquer", analysisResult.variables_a_expliquer.join(','))
       
+      // Récupérer les modalités des variables restantes depuis le localStorage
+      const storedData = localStorage.getItem('excelAnalysisData')
+      let selectedRemainingData = {}
+      if (storedData) {
+        const parsedData = JSON.parse(storedData)
+        selectedRemainingData = parsedData.selectedRemainingData || {}
+      }
+      
       // Inclure les données sélectionnées des variables restantes ET des variables à expliquer
       const allSelectedData = {
-        ...analysisResult.selected_data,
-        ...selectedColumnValues
+        ...selectedRemainingData,  // ✅ Modalités des variables restantes
+        ...selectedColumnValues    // ✅ Valeurs des variables à expliquer
       }
+      
       formData.append("selected_data", JSON.stringify(allSelectedData))
 
       const response = await fetch("http://localhost:8000/excel/build-decision-tree", {
@@ -127,25 +136,25 @@ export default function DecisionTreePage() {
   }
 
   return (
-    <div className="bg-gradient-to-br from-blue-100 to-emerald-100 min-h-screen p-8">
+    <div className="bg-gradient-to-br from-green-100 to-emerald-100 min-h-screen p-8">
       <StepProgress currentStep={6} />
       <div className="max-w-7xl mx-auto">
         {/* Navigation */}
         <div className="flex gap-2 mb-6 ml-20">
-          <Button variant="outline" onClick={() => router.push('/results')}>
+          <Button variant="outline" onClick={() => router.push('/results')} className="border-green-300 text-green-700 hover:bg-green-50">
             <ArrowLeft className="h-4 w-4 mr-2" />
             Retour à l'étape précédente
           </Button>
           <Button variant="outline" onClick={() => {
             clearStoredData()
             router.push('/')
-          }}>
+          }} className="border-green-300 text-green-700 hover:bg-green-50">
             <Home className="h-4 w-4 mr-2" />
             Retour à l'accueil
           </Button>
         </div>
 
-        <h1 className="text-4xl font-bold text-center mb-8 bg-blue-500 bg-clip-text text-transparent">
+        <h1 className="text-4xl font-bold text-center mb-8 bg-green-500 bg-clip-text text-transparent">
           Etape 6 : Arbre de Décision
         </h1>
 

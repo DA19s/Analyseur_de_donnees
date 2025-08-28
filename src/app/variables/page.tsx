@@ -54,19 +54,51 @@ export default function Var() {
     router.push('/')
   }
 
+  // Fonction pour obtenir les couleurs selon l'étape
+  const getStepColors = (step: number) => {
+    switch (step) {
+      case 2: // Variables à expliquer
+        return {
+          background: "from-green-100 to-emerald-100",
+          title: "bg-green-500",
+          button: "border-green-300 text-green-700 hover:bg-green-50"
+        }
+      case 3: // Variables explicatives
+        return {
+          background: "from-blue-100 to-emerald-100",
+          title: "bg-blue-500",
+          button: "border-blue-300 text-blue-700 hover:bg-blue-50"
+        }
+      case 4: // Définition de l'échantillon
+        return {
+          background: "from-yellow-100 to-orange-100",
+          title: "bg-orange-500",
+          button: "border-yellow-300 text-yellow-700 hover:bg-yellow-50"
+        }
+      default:
+        return {
+          background: "from-green-100 to-emerald-100",
+          title: "bg-green-500",
+          button: "border-green-300 text-green-700 hover:bg-green-50"
+        }
+    }
+  }
+
+  const colors = getStepColors(currentStep)
+
   return (
-    <div className="bg-gradient-to-br from-blue-100 to-emerald-100 min-h-screen p-8">
+    <div className={`bg-gradient-to-br ${colors.background} min-h-screen p-8`}>
       <StepProgress currentStep={currentStep} />
       <div className="max-w-6xl mx-auto">
         {/* Navigation */}
         <div className="flex gap-2 mb-6 ml-20">
-          <Button variant="outline" onClick={clearStoredData}>
+          <Button variant="outline" onClick={clearStoredData} className={colors.button}>
             <Home className="h-4 w-4 mr-2" />
             Accueil
           </Button>
         </div>
 
-        <h1 className="text-4xl font-bold text-center mb-8 bg-blue-500 bg-clip-text text-transparent">
+        <h1 className={`text-4xl font-bold text-center mb-8 ${colors.title} bg-clip-text text-transparent`}>
           Etape {currentStep} : {stepTitle}
         </h1>
         

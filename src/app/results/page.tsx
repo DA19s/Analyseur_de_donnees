@@ -226,25 +226,25 @@ export default function Results() {
   }
 
   return (
-    <div className="bg-gradient-to-br from-blue-100 to-emerald-100 min-h-screen p-8">
+    <div className="bg-gradient-to-br from-purple-100 to-indigo-100 min-h-screen p-8">
       <StepProgress currentStep={5} />
       <div className="max-w-6xl mx-auto">
         {/* Navigation */}
         <div className="flex gap-2 mb-6">
-          <Button variant="outline" onClick={() => router.push('/variables')}>
+          <Button variant="outline" onClick={() => router.push('/variables')} className="border-purple-300 text-purple-700 hover:bg-purple-50">
             <ArrowLeft className="h-4 w-4 mr-2" />
             Retour aux variables
           </Button>
           <Button variant="outline" onClick={() => {
             clearStoredData()
             router.push('/')
-          }}>
+          }} className="border-purple-300 text-purple-700 hover:bg-purple-50">
             <Home className="h-4 w-4 mr-2" />
             Accueil
           </Button>
         </div>
 
-        <h1 className="text-4xl font-bold text-center mb-8 bg-blue-500 bg-clip-text text-transparent">
+        <h1 className="text-4xl font-bold text-center mb-8 bg-purple-500 bg-clip-text text-transparent">
           Etape 5 : Vérification des variables
         </h1>
 
@@ -333,46 +333,19 @@ export default function Results() {
           </Card>
         )}
 
-        {/* Section Arbre de Décision */}
+        {/* Section Arbre de Décision - Simplifiée */}
         <Card className="mb-6 shadow-lg border-2 border-green-200">
           <CardHeader>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center">
-                <TreePine className="h-8 w-8 text-green-600 mr-3" />
-                <CardTitle className="text-2xl text-green-800">🌳 Arbre de Décision</CardTitle>
-              </div>
+            <div className="flex items-center justify-center">
               <Button 
                 onClick={() => router.push('/decision-tree')}
-                className="bg-green-600 hover:bg-green-700 text-white"
+                className="bg-green-600 hover:bg-green-700 text-white text-lg py-3 px-8"
               >
-                <TreePine className="h-4 w-4 mr-2" />
+                <TreePine className="h-5 w-5 mr-2" />
                 Construire l'arbre
               </Button>
             </div>
-            <p className="text-sm text-gray-600">
-              Cliquez pour accéder à la page de construction de l'arbre de décision
-            </p>
           </CardHeader>
-          <CardContent>
-            <div className="text-center py-8">
-              <TreePine className="h-16 w-16 text-green-300 mx-auto mb-4" />
-              <p className="text-lg text-green-700 mb-2">
-                Prêt à construire votre arbre de décision ?
-              </p>
-              <p className="text-sm text-gray-600 mb-4">
-                L'arbre analysera vos variables explicatives pour expliquer chaque valeur 
-                de vos variables à expliquer, en utilisant uniquement les données sélectionnées.
-              </p>
-              <div className="p-3 bg-green-50 rounded-lg max-w-md mx-auto">
-                <p className="text-sm text-green-700">
-                  <strong>🎯 Analyse ciblée :</strong> Seules les valeurs sélectionnées seront analysées<br/>
-                  <strong>🌿 Structure arborescente :</strong> Affichage clair avec branches gauche/droite<br/>
-                  <strong>📊 Pourcentages détaillés :</strong> Statistiques précises sur chaque branche<br/>
-                  <strong>📄 PDF téléchargeable :</strong> Rapport complet et structuré
-                </p>
-              </div>
-            </div>
-          </CardContent>
         </Card>
 
       </div>
