@@ -312,7 +312,8 @@ def calculate_branch_percentages(df: pd.DataFrame, explanatory_var: str,
         return {}
 
 def construct_tree_for_value(df: pd.DataFrame, target_value: Any, target_var: str, 
-                           available_explanatory_vars: List[str], current_path: List[str] = None) -> Dict[str, Any]:
+                           available_explanatory_vars: List[str], current_path: List[str] = None,
+                           min_population_threshold: Optional[int] = None) -> Dict[str, Any]:
     """
     Construit récursivement l'arbre de décision pour une valeur cible donnée.
     """
@@ -367,17 +368,27 @@ def construct_tree_for_value(df: pd.DataFrame, target_value: Any, target_var: st
         filtered_df = df[branch_mask]
         
         if len(filtered_df) > 0 and remaining_vars:
-            # Construire le sous-arbre récursivement
-            subtree = construct_tree_for_value(
-                filtered_df, target_value, target_var, 
-                remaining_vars, current_path + [best_var, branch_value]
-            )
-            branch_data["subtree"] = subtree
+            # Vérifier le seuil d'effectif minimum (0 = pas de limite)
+            if min_population_threshold and min_population_threshold > 0 and len(filtered_df) < min_population_threshold:
+                # Arrêter la construction si l'effectif est trop faible
+                branch_data["subtree"] = {
+                    "type": "leaf",
+                    "message": f"🛑 Branche arrêtée - Effectif insuffisant ({len(filtered_df)} < {min_population_threshold})"
+                }
+            else:
+                # Construire le sous-arbre récursivement
+                subtree = construct_tree_for_value(
+                    filtered_df, target_value, target_var, 
+                    remaining_vars, current_path + [best_var, branch_value],
+                    min_population_threshold
+                )
+                branch_data["subtree"] = subtree
     
     return tree_node
 
 async def build_decision_tree(filename: str, variables_explicatives: List[str], 
-                            variables_a_expliquer: List[str], selected_data: Dict[str, Any]) -> Dict[str, Any]:
+                            variables_a_expliquer: List[str], selected_data: Dict[str, Any], 
+                            min_population_threshold: Optional[int] = None) -> Dict[str, Any]:
     """
     Construit l'arbre de décision complet pour toutes les variables à expliquer.
     """
@@ -437,7 +448,8 @@ async def build_decision_tree(filename: str, variables_explicatives: List[str],
             # Construire l'arbre pour cette valeur
             tree = construct_tree_for_value(
                 filtered_df, target_value, target_var, 
-                variables_explicatives.copy(), []
+                variables_explicatives.copy(), [],
+                min_population_threshold
             )
             
             target_trees[str(target_value)] = tree
@@ -605,12 +617,13 @@ def generate_tree_pdf(decision_trees: Dict[str, Any], filename: str) -> str:
         return ""
 
 async def build_decision_tree_with_pdf(filename: str, variables_explicatives: List[str], 
-                                     variables_a_expliquer: List[str], selected_data: Dict[str, Any]) -> Dict[str, Any]:
+                                     variables_a_expliquer: List[str], selected_data: Dict[str, Any], 
+                                     min_population_threshold: Optional[int] = None) -> Dict[str, Any]:
     """
     Construit l'arbre de décision et génère le PDF correspondant.
     """
     # Construire l'arbre
-    tree_result = await build_decision_tree(filename, variables_explicatives, variables_a_expliquer, selected_data)
+    tree_result = await build_decision_tree(filename, variables_explicatives, variables_a_expliquer, selected_data, min_population_threshold)
     
     if "error" in tree_result:
         return tree_result

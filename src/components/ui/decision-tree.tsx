@@ -1,9 +1,10 @@
 "use client"
 
-import { useState } from "react"
-import { ChevronDown, ChevronRight, Download, TreePine } from "lucide-react"
+import { useState, useEffect } from "react"
+import { ChevronDown, ChevronRight, Download, TreePine, Filter, TrendingUp } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+
 
 interface TreeNode {
   type: 'node' | 'leaf' | 'multi_node'
@@ -26,11 +27,31 @@ interface DecisionTreeProps {
   filename: string
   pdfBase64?: string
   pdfGenerated?: boolean
+  minPopulationThreshold?: number
 }
 
-export default function DecisionTree({ decisionTrees, filename, pdfBase64, pdfGenerated }: DecisionTreeProps) {
+// Interface pour les feuilles finales filtrées
+interface FilteredLeaf {
+  path: string[]
+  count: number
+  percentage: number
+  targetVariable: string
+  targetValue: string
+}
+
+export default function DecisionTree({ decisionTrees, filename, pdfBase64, pdfGenerated, minPopulationThreshold }: DecisionTreeProps) {
   const [expandedNodes, setExpandedNodes] = useState<{ [key: string]: boolean }>({})
   const [expandedTrees, setExpandedTrees] = useState<{ [key: string]: boolean }>({})
+  const [minPercentage, setMinPercentage] = useState<string>('')
+  const [filteredLeaves, setFilteredLeaves] = useState<FilteredLeaf[]>([])
+  const [showFilteredResults, setShowFilteredResults] = useState(false)
+
+  // Réinitialiser le filtre quand l'arbre change
+  useEffect(() => {
+    setMinPercentage('')
+    setFilteredLeaves([])
+    setShowFilteredResults(false)
+  }, [decisionTrees])
 
   const toggleNode = (nodeKey: string) => {
     setExpandedNodes(prev => ({
@@ -44,6 +65,114 @@ export default function DecisionTree({ decisionTrees, filename, pdfBase64, pdfGe
       ...prev,
       [treeKey]: !prev[treeKey]
     }))
+  }
+
+  // Fonction pour extraire toutes les feuilles finales avec leurs chemins
+  const extractAllLeaves = (): FilteredLeaf[] => {
+    const leaves: FilteredLeaf[] = []
+    
+    Object.entries(decisionTrees).forEach(([targetVar, targetTrees]) => {
+      Object.entries(targetTrees).forEach(([targetValue, tree]) => {
+        const treeLeaves = extractLeavesFromNode(tree, [], targetVar, targetValue)
+        leaves.push(...treeLeaves)
+      })
+    })
+    
+    return leaves
+  }
+
+  // Fonction récursive pour extraire les feuilles d'un nœud
+  const extractLeavesFromNode = (
+    node: TreeNode, 
+    currentPath: string[], 
+    targetVar: string, 
+    targetValue: string
+  ): FilteredLeaf[] => {
+    const leaves: FilteredLeaf[] = []
+    
+    if (node.type === 'leaf') {
+      // Extraire le pourcentage de la feuille finale
+      const leafPercentage = parseFloat(node.message?.match(/\(([\d.]+)%\)/)?.[1] || '0')
+      const leafCount = parseInt(node.message?.match(/(\d+)/)?.[1] || '0')
+      
+      if (leafPercentage > 0) {
+        leaves.push({
+          path: [...currentPath],
+          count: leafCount,
+          percentage: leafPercentage,
+          targetVariable: targetVar,
+          targetValue: targetValue
+        })
+      }
+      return leaves
+    }
+
+    if (node.type === 'multi_node' && node.nodes) {
+      Object.entries(node.nodes).forEach(([varName, varNode]) => {
+        const subLeaves = extractLeavesFromNode(varNode, [...currentPath, varName], targetVar, targetValue)
+        leaves.push(...subLeaves)
+      })
+      return leaves
+    }
+
+    if (node.branches) {
+      Object.entries(node.branches).forEach(([branchValue, branchData]) => {
+        const newPath = [...currentPath, `${node.variable} = ${branchValue}`]
+        
+        // Si c'est une feuille finale (pas de sous-arbre), utiliser les données de la branche
+        if (!branchData.subtree) {
+          // Ignorer les branches avec 0 effectif
+          if (branchData.count > 0) {
+            leaves.push({
+              path: [...newPath],
+              count: branchData.count,
+              percentage: branchData.percentage,
+              targetVariable: targetVar,
+              targetValue: targetValue
+            })
+          }
+        } else {
+          // Sinon, continuer la récursion
+          const subLeaves = extractLeavesFromNode(branchData.subtree, newPath, targetVar, targetValue)
+          leaves.push(...subLeaves)
+        }
+      })
+    }
+    
+    return leaves
+  }
+
+  // Fonction pour filtrer les feuilles par pourcentage minimum
+  const filterLeavesByPercentage = () => {
+    const percentage = parseFloat(minPercentage)
+    if (isNaN(percentage) || percentage < 0 || percentage > 100) {
+      alert('Veuillez saisir un pourcentage valide entre 0 et 100')
+      return
+    }
+
+    const allLeaves = extractAllLeaves()
+    console.log('🔍 Feuilles extraites:', allLeaves)
+    console.log('📊 Structure des arbres:', decisionTrees)
+    
+    // Filtrer par pourcentage ET par effectif minimum (si défini)
+    const filtered = allLeaves
+      .filter(leaf => {
+        const meetsPercentage = leaf.percentage >= percentage
+        const meetsPopulation = minPopulationThreshold ? leaf.count >= minPopulationThreshold : true
+        return meetsPercentage && meetsPopulation
+      })
+      .sort((a, b) => b.percentage - a.percentage) // Ordre décroissant
+
+    console.log('✅ Feuilles filtrées:', filtered)
+    setFilteredLeaves(filtered)
+    setShowFilteredResults(true)
+  }
+
+  // Fonction pour réinitialiser le filtre
+  const resetFilter = () => {
+    setMinPercentage('')
+    setFilteredLeaves([])
+    setShowFilteredResults(false)
   }
 
   const downloadPDF = () => {
@@ -157,6 +286,36 @@ export default function DecisionTree({ decisionTrees, filename, pdfBase64, pdfGe
               <div className="flex-1 pr-4">
                 {leftBranches.map(([branchValue, branchData], index) => {
                   const branchKey = `${nodeKey}-${branchValue}`
+                  
+                  // Vérifier si la branche a un effectif suffisant
+                  if (branchData.count === 0) {
+                    return (
+                      <div key={branchKey} className="mb-3">
+                        {/* Ligne de connexion horizontale gauche */}
+                        <div className="flex items-center">
+                          <div className="w-8 h-0.5 bg-blue-300"></div>
+                          <div className="w-2 h-0.5 bg-blue-300 transform rotate-45 origin-left"></div>
+                        </div>
+                        
+                        {/* Branche arrêtée - population insuffisante */}
+                        <div className="ml-6 p-3 bg-red-50 rounded-lg border border-red-200">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="font-semibold text-red-800 text-lg">{branchValue}</span>
+                            <div className="text-right">
+                              <div className="text-2xl font-bold text-red-600">0</div>
+                              <div className="text-sm text-red-600">(0%)</div>
+                            </div>
+                          </div>
+                          <div className="text-center py-2">
+                            <span className="text-sm text-red-600 font-medium">
+                              🛑 Branche arrêtée - Population insuffisante
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  }
+                  
                   return (
                     <div key={branchKey} className="mb-3">
                       {/* Ligne de connexion horizontale gauche */}
@@ -191,6 +350,36 @@ export default function DecisionTree({ decisionTrees, filename, pdfBase64, pdfGe
               <div className="flex-1 pl-4">
                 {rightBranches.map(([branchValue, branchData], index) => {
                   const branchKey = `${nodeKey}-${branchValue}`
+                  
+                  // Vérifier si la branche a un effectif suffisant
+                  if (branchData.count === 0) {
+                    return (
+                      <div key={branchKey} className="mb-3">
+                        {/* Ligne de connexion horizontale droite */}
+                        <div className="flex items-center justify-end">
+                          <div className="w-2 h-0.5 bg-blue-300 transform -rotate-45 origin-right"></div>
+                          <div className="w-8 h-0.5 bg-blue-300"></div>
+                        </div>
+                        
+                        {/* Branche arrêtée - population insuffisante */}
+                        <div className="mr-6 p-3 bg-red-50 rounded-lg border border-red-200">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="font-semibold text-red-800 text-lg">{branchValue}</span>
+                            <div className="text-right">
+                              <div className="text-2xl font-bold text-red-600">0</div>
+                              <div className="text-sm text-red-600">(0%)</div>
+                            </div>
+                          </div>
+                          <div className="text-center py-2">
+                            <span className="text-sm text-red-600 font-medium">
+                              🛑 Branche arrêtée - Population insuffisante
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  }
+                  
                   return (
                     <div key={branchKey} className="mb-3">
                       {/* Ligne de connexion horizontale droite */}
@@ -339,6 +528,144 @@ export default function DecisionTree({ decisionTrees, filename, pdfBase64, pdfGe
           <TreePine className="h-16 w-16 text-gray-300 mx-auto mb-4" />
           <p>Aucun arbre de décision disponible</p>
         </div>
+      )}
+
+      {/* Section de filtrage par pourcentage */}
+      {Object.keys(decisionTrees).length > 0 && (
+        <Card className="border-2 border-purple-200 bg-purple-50">
+          <CardHeader>
+            <div className="flex items-center">
+              <Filter className="h-6 w-6 text-purple-600 mr-3" />
+              <CardTitle className="text-xl text-purple-800">
+                🔍 Filtrage par Pourcentage Minimum
+              </CardTitle>
+            </div>
+            <p className="text-sm text-purple-600">
+              Affichez uniquement les branches dont le pourcentage de la feuille finale est supérieur ou égal au seuil spécifié
+              {minPopulationThreshold && (
+                <span className="block mt-1 text-blue-600 font-medium">
+                  📊 Seuil d'effectif actuel : minimum {minPopulationThreshold} patients par branche
+                </span>
+              )}
+            </p>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-4 mb-4">
+              <div className="flex-1">
+                <label htmlFor="minPercentage" className="block text-sm font-medium text-purple-700 mb-2">
+                  Pourcentage minimum (%)
+                </label>
+                <input
+                  id="minPercentage"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.1"
+                  value={minPercentage}
+                  onChange={(e) => setMinPercentage(e.target.value)}
+                  placeholder="Ex: 5.0"
+                  className="w-full px-3 py-2 border border-purple-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button 
+                  onClick={filterLeavesByPercentage}
+                  disabled={!minPercentage}
+                  className="bg-purple-600 hover:bg-purple-700 text-white"
+                >
+                  <Filter className="h-4 w-4 mr-2" />
+                  Filtrer
+                </Button>
+                <Button 
+                  onClick={resetFilter}
+                  variant="outline"
+                  className="border-purple-300 text-purple-700 hover:bg-purple-50"
+                >
+                  Réinitialiser
+                </Button>
+              </div>
+            </div>
+
+            {/* Résultats filtrés */}
+            {showFilteredResults && (
+              <div className="mt-6">
+                <div className="flex items-center mb-4">
+                  <TrendingUp className="h-5 w-5 text-purple-600 mr-2" />
+                  <h3 className="text-lg font-semibold text-purple-800">
+                    📊 Branches filtrées (≥ {minPercentage}%) - {filteredLeaves.length} résultat(s)
+                  </h3>
+                  {minPopulationThreshold && (
+                    <span className="ml-3 text-sm text-blue-600 bg-blue-100 px-2 py-1 rounded">
+                      Effectif ≥ {minPopulationThreshold}
+                    </span>
+                  )}
+                </div>
+                
+                {filteredLeaves.length > 0 ? (
+                  <div className="space-y-3">
+                    {filteredLeaves.map((leaf, index) => (
+                      <div key={index} className="bg-white p-4 rounded-lg border border-purple-200 shadow-sm">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center">
+                            <span className="text-purple-600 font-semibold mr-2">
+                              #{index + 1}
+                            </span>
+                            <span className="text-lg font-bold text-purple-800">
+                              {leaf.percentage.toFixed(2)}%
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-sm text-gray-600">
+                              Variable: <span className="font-semibold">{leaf.targetVariable}</span>
+                            </div>
+                            <div className="text-sm text-gray-600">
+                              Valeur: <span className="font-semibold">{leaf.targetValue}</span>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <div className="mb-3">
+                          <div className="text-sm text-gray-600 mb-1">
+                            <strong>Chemin de la branche:</strong>
+                          </div>
+                          <div className="bg-gray-50 p-3 rounded border-l-4 border-purple-300">
+                            {leaf.path.length > 0 ? (
+                              <div className="space-y-1">
+                                {leaf.path.map((step, stepIndex) => (
+                                  <div key={stepIndex} className="flex items-center">
+                                    <span className="text-purple-500 mr-2">→</span>
+                                    <span className="text-sm text-gray-700">{step}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-gray-500 italic">Chemin direct</span>
+                            )}
+                          </div>
+                        </div>
+                        
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-gray-600">
+                            <strong>Nombre de patients:</strong> {leaf.count}
+                          </span>
+                          <span className="text-purple-600 font-semibold">
+                            {((leaf.count / (leaf.count + (leaf.count / leaf.percentage * 100 - leaf.count))) * 100).toFixed(1)}% de l'échantillon total
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-6 text-gray-500">
+                    <Filter className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                    <p className="text-lg">Aucune branche ne correspond au critère de {minPercentage}%</p>
+                    <p className="text-sm">Essayez de réduire le pourcentage minimum</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       )}
     </div>
   )

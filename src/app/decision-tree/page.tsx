@@ -26,6 +26,7 @@ export default function DecisionTreePage() {
   const [buildingTree, setBuildingTree] = useState(false)
   const [treeError, setTreeError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [minPopulationThreshold, setMinPopulationThreshold] = useState<number>(0)
 
   useEffect(() => {
     // Récupérer les données depuis le localStorage
@@ -75,6 +76,7 @@ export default function DecisionTreePage() {
       formData.append("filename", filename)
       formData.append("variables_explicatives", analysisResult.variables_explicatives.join(','))
       formData.append("variable_a_expliquer", analysisResult.variables_a_expliquer.join(','))
+      formData.append("min_population_threshold", minPopulationThreshold.toString())
       
       // Récupérer les modalités des variables restantes depuis le localStorage
       const storedData = localStorage.getItem('excelAnalysisData')
@@ -165,7 +167,27 @@ export default function DecisionTreePage() {
               <TreePine className="h-8 w-8 text-blue-600 mr-3" />
               <h2 className="text-2xl text-blue-800">🌳 Construction de l'Arbre de Décision</h2>
             </div>
-            {!decisionTreeData && (
+            <div className="flex items-center gap-4">
+              {/* Configuration du seuil d'effectif */}
+              <div className="flex items-center gap-2">
+                <label htmlFor="minPopulationThreshold" className="text-sm font-medium text-gray-700">
+                  Effectif minimum par branche:
+                </label>
+                <span className="text-xs text-gray-500 ml-1">
+                  (0 = arbre complet)
+                </span>
+                <input
+                  id="minPopulationThreshold"
+                  type="number"
+                  min="0"
+                  value={minPopulationThreshold}
+                  onChange={(e) => setMinPopulationThreshold(parseInt(e.target.value) || 0)}
+                  className="w-20 px-2 py-1 border border-gray-300 rounded text-sm"
+                  disabled={buildingTree}
+                />
+              </div>
+              
+              {/* Bouton de construction/reconstruction */}
               <Button 
                 onClick={buildDecisionTree}
                 disabled={buildingTree}
@@ -176,6 +198,11 @@ export default function DecisionTreePage() {
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                     Construction en cours...
                   </>
+                ) : decisionTreeData ? (
+                  <>
+                    <TreePine className="h-4 w-4 mr-2" />
+                    Reconstruire l'arbre
+                  </>
                 ) : (
                   <>
                     <TreePine className="h-4 w-4 mr-2" />
@@ -183,12 +210,17 @@ export default function DecisionTreePage() {
                   </>
                 )}
               </Button>
-            )}
+            </div>
           </div>
           
           <p className="text-sm text-gray-600 mb-4">
-            Analyse des variables explicatives pour expliquer chaque valeur des variables à expliquer
+            Analyse des variables explicatives pour expliquer chaque valeur des variables à expliquer.
+            <span className="block mt-1 text-blue-600">
+              💡 <strong>Modifiez le seuil d'effectif ci-dessus et cliquez sur "Reconstruire l'arbre" pour ajuster la profondeur de l'arbre.</strong>
+            </span>
           </p>
+
+
 
           {/* Indicateur de progression */}
           {buildingTree && (
@@ -226,6 +258,7 @@ export default function DecisionTreePage() {
               filename={decisionTreeData.filename}
               pdfBase64={decisionTreeData.pdf_base64}
               pdfGenerated={decisionTreeData.pdf_generated}
+              minPopulationThreshold={minPopulationThreshold}
             />
           )}
 

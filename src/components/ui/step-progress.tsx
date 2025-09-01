@@ -48,7 +48,7 @@ export default function StepProgress({ currentStep }: StepProgressProps) {
   }, [currentStep])
 
   return (
-    <div className="fixed top-4 left-2 z-50 bg-white/90 backdrop-blur-sm rounded-lg shadow-lg border p-2 max-w-44">
+    <div className="fixed top-4 left-2 z-50 bg-white/90 backdrop-blur-sm rounded-lg shadow-lg border p-2 max-w-30">
       <div className="space-y-1.5">
         {steps.map((step, index) => {
           const isCompleted = index < currentStepIndex
