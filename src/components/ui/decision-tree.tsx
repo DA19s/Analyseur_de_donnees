@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { ChevronDown, ChevronRight, Download, TreePine, Filter, TrendingUp } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import PDFGenerator from "./pdf-generator"
 
 
 interface TreeNode {
@@ -20,6 +21,7 @@ interface BranchData {
   count: number
   percentage: number
   subtree?: TreeNode
+  total?: number
 }
 
 interface DecisionTreeProps {
@@ -28,6 +30,10 @@ interface DecisionTreeProps {
   pdfBase64?: string
   pdfGenerated?: boolean
   minPopulationThreshold?: number
+  variablesToExplain?: string[]
+  selectedColumnValues?: { [columnName: string]: any[] }
+  treatmentMode?: 'independent' | 'together'
+  basePopulation?: number
 }
 
 // Interface pour les feuilles finales filtrées
@@ -37,14 +43,44 @@ interface FilteredLeaf {
   percentage: number
   targetVariable: string
   targetValue: string
+  total?: number
 }
 
-export default function DecisionTree({ decisionTrees, filename, pdfBase64, pdfGenerated, minPopulationThreshold }: DecisionTreeProps) {
+export default function DecisionTree({ decisionTrees, filename, pdfBase64, pdfGenerated, minPopulationThreshold, variablesToExplain, selectedColumnValues, treatmentMode, basePopulation }: DecisionTreeProps) {
   const [expandedNodes, setExpandedNodes] = useState<{ [key: string]: boolean }>({})
   const [expandedTrees, setExpandedTrees] = useState<{ [key: string]: boolean }>({})
   const [minPercentage, setMinPercentage] = useState<string>('')
   const [filteredLeaves, setFilteredLeaves] = useState<FilteredLeaf[]>([])
   const [showFilteredResults, setShowFilteredResults] = useState(false)
+
+  // Fonction pour formater les valeurs
+  const formatValue = (value: string): string => {
+    // Si c'est une valeur "Combined", la remplacer par les modalités avec leurs noms de variables
+    if (value.toLowerCase().includes('combined')) {
+      if (selectedColumnValues) {
+        // Récupérer les modalités sélectionnées avec leurs noms de variables
+        const modalitiesWithNames: string[] = []
+        
+        // Utiliser toutes les variables qui ont des modalités sélectionnées
+        const allVariables = Object.keys(selectedColumnValues)
+        
+        allVariables.forEach(varName => {
+          if (selectedColumnValues[varName] && selectedColumnValues[varName].length > 0) {
+            // Pour chaque modalité de cette variable, créer "nomVariable=modalité"
+            selectedColumnValues[varName].forEach(modality => {
+              modalitiesWithNames.push(`${varName}=${modality}`)
+            })
+          }
+        })
+        
+        if (modalitiesWithNames.length > 0) {
+          return modalitiesWithNames.join(' + ')
+        }
+      }
+      return 'Modalités combinées'
+    }
+    return value
+  }
 
   // Réinitialiser le filtre quand l'arbre change
   useEffect(() => {
@@ -78,6 +114,7 @@ export default function DecisionTree({ decisionTrees, filename, pdfBase64, pdfGe
       })
     })
     
+
     return leaves
   }
 
@@ -128,7 +165,8 @@ export default function DecisionTree({ decisionTrees, filename, pdfBase64, pdfGe
               count: branchData.count,
               percentage: branchData.percentage,
               targetVariable: targetVar,
-              targetValue: targetValue
+              targetValue: targetValue,
+              total: (branchData as any).total
             })
           }
         } else {
@@ -151,19 +189,19 @@ export default function DecisionTree({ decisionTrees, filename, pdfBase64, pdfGe
     }
 
     const allLeaves = extractAllLeaves()
-    console.log('🔍 Feuilles extraites:', allLeaves)
-    console.log('📊 Structure des arbres:', decisionTrees)
+
     
     // Filtrer par pourcentage ET par effectif minimum (si défini)
     const filtered = allLeaves
       .filter(leaf => {
         const meetsPercentage = leaf.percentage >= percentage
         const meetsPopulation = minPopulationThreshold ? leaf.count >= minPopulationThreshold : true
+
         return meetsPercentage && meetsPopulation
       })
       .sort((a, b) => b.percentage - a.percentage) // Ordre décroissant
 
-    console.log('✅ Feuilles filtrées:', filtered)
+
     setFilteredLeaves(filtered)
     setShowFilteredResults(true)
   }
@@ -175,26 +213,7 @@ export default function DecisionTree({ decisionTrees, filename, pdfBase64, pdfGe
     setShowFilteredResults(false)
   }
 
-  const downloadPDF = () => {
-    if (pdfBase64) {
-      const byteCharacters = atob(pdfBase64)
-      const byteNumbers = new Array(byteCharacters.length)
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i)
-      }
-      const byteArray = new Uint8Array(byteNumbers)
-      const blob = new Blob([byteArray], { type: 'application/pdf' })
-      
-      const url = window.URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `arbre_decision_${filename.replace('.xlsx', '').replace('.xls', '')}.pdf`
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      window.URL.revokeObjectURL(url)
-    }
-  }
+  // Fonction downloadPDF supprimée - remplacée par PDFGenerator
 
   const renderTreeNode = (node: TreeNode, level: number = 0, nodeKey: string = '') => {
     const indent = level * 40
@@ -287,8 +306,9 @@ export default function DecisionTree({ decisionTrees, filename, pdfBase64, pdfGe
                 {leftBranches.map(([branchValue, branchData], index) => {
                   const branchKey = `${nodeKey}-${branchValue}`
                   
-                  // Vérifier si la branche a un effectif suffisant
-                  if (branchData.count === 0) {
+                  // Vérifier si la branche a un effectif suffisant (sur le nombre de cas de la branche)
+                  const branchTotal = (branchData.total ?? branchData.count)
+                  if (branchTotal === 0 || (minPopulationThreshold && minPopulationThreshold > 0 && branchTotal < minPopulationThreshold)) {
                     return (
                       <div key={branchKey} className="mb-3">
                         {/* Ligne de connexion horizontale gauche */}
@@ -302,13 +322,13 @@ export default function DecisionTree({ decisionTrees, filename, pdfBase64, pdfGe
                           <div className="flex items-center justify-between mb-2">
                             <span className="font-semibold text-red-800 text-lg">{branchValue}</span>
                             <div className="text-right">
-                              <div className="text-2xl font-bold text-red-600">0</div>
-                              <div className="text-sm text-red-600">(0%)</div>
+                              <div className="text-2xl font-bold text-red-600">{branchData.count}</div>
+                              <div className="text-sm text-red-600">({branchData.percentage}%)</div>
                             </div>
                           </div>
                           <div className="text-center py-2">
                             <span className="text-sm text-red-600 font-medium">
-                              🛑 Branche arrêtée - Population insuffisante
+                              [ARRET] Branche arrêtée - Population insuffisante ({branchTotal} &lt; {minPopulationThreshold})
                             </span>
                           </div>
                         </div>
@@ -327,9 +347,17 @@ export default function DecisionTree({ decisionTrees, filename, pdfBase64, pdfGe
                       {/* Contenu de la branche */}
                       <div className="ml-6 p-3 bg-purple-50 rounded-lg border border-purple-200">
                         <div className="flex items-center justify-between mb-2">
-                          <span className="font-semibold text-purple-800 text-lg">{branchValue}</span>
+                          <div>
+                            <span className="font-semibold text-purple-800 text-lg">{branchValue}</span>
+                            {basePopulation ? (
+                              <>
+                                <div className="text-xs text-gray-500 mt-1">{branchData.total ?? branchData.count} cas</div>
+                                <div className="text-xs text-gray-500">{Math.round(((branchData.total ?? branchData.count) / basePopulation) * 10000) / 100}% de la population</div>
+                              </>
+                            ) : null}
+                          </div>
                           <div className="text-right">
-                            <div className="text-2xl font-bold text-purple-600">{branchData.count}</div>
+                            <div className="text-sm text-purple-700">{branchData.count} respectent les modalités à expliquer</div>
                             <div className="text-sm text-purple-600">({branchData.percentage}%)</div>
                           </div>
                         </div>
@@ -351,8 +379,9 @@ export default function DecisionTree({ decisionTrees, filename, pdfBase64, pdfGe
                 {rightBranches.map(([branchValue, branchData], index) => {
                   const branchKey = `${nodeKey}-${branchValue}`
                   
-                  // Vérifier si la branche a un effectif suffisant
-                  if (branchData.count === 0) {
+                  // Vérifier si la branche a un effectif suffisant (sur le nombre de cas de la branche)
+                  const branchTotal = (branchData.total ?? branchData.count)
+                  if (branchTotal === 0 || (minPopulationThreshold && minPopulationThreshold > 0 && branchTotal < minPopulationThreshold)) {
                     return (
                       <div key={branchKey} className="mb-3">
                         {/* Ligne de connexion horizontale droite */}
@@ -366,13 +395,13 @@ export default function DecisionTree({ decisionTrees, filename, pdfBase64, pdfGe
                           <div className="flex items-center justify-between mb-2">
                             <span className="font-semibold text-red-800 text-lg">{branchValue}</span>
                             <div className="text-right">
-                              <div className="text-2xl font-bold text-red-600">0</div>
-                              <div className="text-sm text-red-600">(0%)</div>
+                              <div className="text-2xl font-bold text-red-600">{branchData.count}</div>
+                              <div className="text-sm text-red-600">({branchData.percentage}%)</div>
                             </div>
                           </div>
                           <div className="text-center py-2">
                             <span className="text-sm text-red-600 font-medium">
-                              🛑 Branche arrêtée - Population insuffisante
+                              [ARRET] Branche arrêtée - Population insuffisante ({branchTotal} &lt; {minPopulationThreshold})
                             </span>
                           </div>
                         </div>
@@ -391,9 +420,17 @@ export default function DecisionTree({ decisionTrees, filename, pdfBase64, pdfGe
                       {/* Contenu de la branche */}
                       <div className="mr-6 p-3 bg-purple-50 rounded-lg border border-purple-200">
                         <div className="flex items-center justify-between mb-2">
-                          <span className="font-semibold text-purple-800 text-lg">{branchValue}</span>
+                          <div>
+                            <span className="font-semibold text-purple-800 text-lg">{branchValue}</span>
+                            {basePopulation ? (
+                              <>
+                                <div className="text-xs text-gray-500 mt-1">{branchData.total ?? branchData.count} cas</div>
+                                <div className="text-xs text-gray-500">{Math.round(((branchData.total ?? branchData.count) / basePopulation) * 10000) / 100}% de la population</div>
+                              </>
+                            ) : null}
+                          </div>
                           <div className="text-right">
-                            <div className="text-2xl font-bold text-purple-600">{branchData.count}</div>
+                            <div className="text-sm text-purple-700">{branchData.count} respectent les modalités à expliquer</div>
                             <div className="text-sm text-purple-600">({branchData.percentage}%)</div>
                           </div>
                         </div>
@@ -419,6 +456,21 @@ export default function DecisionTree({ decisionTrees, filename, pdfBase64, pdfGe
   const renderTree = (targetVar: string, targetTrees: { [value: string]: TreeNode }) => {
     const isTreeExpanded = expandedTrees[targetVar] || false
 
+    // Déterminer le titre à afficher
+    const getTitle = () => {
+      // En mode ensemble, afficher toutes les variables
+      if (targetTrees['Combined']) {
+        const allVariables = Object.keys(selectedColumnValues || {}).filter(varName => 
+          selectedColumnValues?.[varName] && selectedColumnValues[varName].length > 0
+        )
+        return allVariables.join(' + ')
+      }
+      // Mode indépendant : afficher juste le nom de la variable
+      return targetVar
+    }
+
+    const displayTrees = targetTrees
+
     return (
       <Card key={targetVar} className="mb-6 border-2 border-green-200">
         <CardHeader 
@@ -430,10 +482,10 @@ export default function DecisionTree({ decisionTrees, filename, pdfBase64, pdfGe
               <TreePine className="h-6 w-6 text-green-600 mr-3" />
               <div>
                 <CardTitle className="text-xl text-green-800">
-                  🎯 Variable à expliquer: {targetVar}
+                  🎯 Variable à expliquer: {getTitle()}
                 </CardTitle>
                 <p className="text-sm text-green-600">
-                  {Object.keys(targetTrees).length} valeur(s) à analyser
+                  {Object.keys(displayTrees).length} valeur(s) à analyser
                 </p>
               </div>
             </div>
@@ -448,10 +500,13 @@ export default function DecisionTree({ decisionTrees, filename, pdfBase64, pdfGe
         {isTreeExpanded && (
           <CardContent className="pt-0">
             <div className="space-y-6">
-              {Object.entries(targetTrees).map(([targetValue, tree]) => (
+              {Object.entries(displayTrees).map(([targetValue, tree]) => (
                 <div key={targetValue} className="border-l-4 border-green-300 pl-4">
                   <h4 className="text-lg font-semibold text-green-700 mb-3">
-                    📊 Valeur: {targetValue}
+                    📊 Valeur: {formatValue(targetValue)}
+                    {typeof basePopulation === 'number' && basePopulation > 0 && (
+                      <span className="ml-2 text-gray-600">— {basePopulation} lignes</span>
+                    )}
                   </h4>
                   <div className="bg-gray-50 p-4 rounded-lg">
                     {renderTreeNode(tree, 0, `${targetVar}-${targetValue}`)}
@@ -480,43 +535,28 @@ export default function DecisionTree({ decisionTrees, filename, pdfBase64, pdfGe
             </p>
           </div>
         </div>
-        
-        {pdfGenerated && pdfBase64 && (
-          <Button 
-            onClick={downloadPDF}
-            className="bg-green-600 hover:bg-green-700 text-white"
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => { window.location.href = '/decision-tree/chart' }}
+            className="border-blue-300 text-blue-700 hover:bg-blue-50"
           >
-            <Download className="h-4 w-4 mr-2" />
-            Télécharger PDF
+            👁️ Voir le dessin (Chart)
           </Button>
-        )}
+        <PDFGenerator
+          decisionTrees={decisionTrees}
+          filename={filename}
+          variablesToExplain={variablesToExplain || []}
+          selectedColumnValues={selectedColumnValues || {}}
+          treatmentMode={treatmentMode || 'independent'}
+        />
+        </div>
       </div>
 
-      {/* Indicateur de statut PDF */}
-      {pdfGenerated !== undefined && (
-        <div className={`p-3 rounded-lg ${
-          pdfGenerated 
-            ? 'bg-green-100 border border-green-300 text-green-800' 
-            : 'bg-red-100 border border-red-300 text-red-800'
-        }`}>
-          <div className="flex items-center">
-            {pdfGenerated ? (
-              <>
-                <span className="text-green-600 mr-2">✅</span>
-                <span>PDF généré avec succès - Disponible au téléchargement</span>
-              </>
-            ) : (
-              <>
-                <span className="text-red-600 mr-2">❌</span>
-                <span>Erreur lors de la génération du PDF</span>
-              </>
-            )}
-          </div>
-        </div>
-      )}
+      {/* PDF généré côté client avec Chart.js */}
 
       {/* Arbres de décision */}
-      <div className="space-y-4">
+      <div id="original-tree" className="space-y-4">
         {Object.entries(decisionTrees).map(([targetVar, targetTrees]) => 
           renderTree(targetVar, targetTrees)
         )}
@@ -592,7 +632,7 @@ export default function DecisionTree({ decisionTrees, filename, pdfBase64, pdfGe
                 <div className="flex items-center mb-4">
                   <TrendingUp className="h-5 w-5 text-purple-600 mr-2" />
                   <h3 className="text-lg font-semibold text-purple-800">
-                    📊 Branches filtrées (≥ {minPercentage}%) - {filteredLeaves.length} résultat(s)
+                    📊 Taux minimum (≥ {minPercentage}%) - {filteredLeaves.length} résultat(s)
                   </h3>
                   {minPopulationThreshold && (
                     <span className="ml-3 text-sm text-blue-600 bg-blue-100 px-2 py-1 rounded">
@@ -611,7 +651,7 @@ export default function DecisionTree({ decisionTrees, filename, pdfBase64, pdfGe
                               #{index + 1}
                             </span>
                             <span className="text-lg font-bold text-purple-800">
-                              {leaf.percentage.toFixed(2)}%
+                              {leaf.percentage.toFixed(2)}% - {leaf.count} cas avec {formatValue(leaf.targetValue)} sur {(leaf.total ?? (leaf.percentage > 0 ? Math.round(leaf.count / (leaf.percentage / 100)) : leaf.count))} cas de cette branche
                             </span>
                           </div>
                           <div className="text-right">
@@ -646,10 +686,10 @@ export default function DecisionTree({ decisionTrees, filename, pdfBase64, pdfGe
                         
                         <div className="flex items-center justify-between text-sm">
                           <span className="text-gray-600">
-                            <strong>Nombre de patients:</strong> {leaf.count}
+                            <strong>Nombre de cas:</strong> {leaf.count}
                           </span>
                           <span className="text-purple-600 font-semibold">
-                            {((leaf.count / (leaf.count + (leaf.count / leaf.percentage * 100 - leaf.count))) * 100).toFixed(1)}% de l'échantillon total
+                            {leaf.percentage.toFixed(2)}% avec {formatValue(leaf.targetValue)}
                           </span>
                         </div>
                       </div>

@@ -6,6 +6,7 @@ import { ArrowLeft, Home, TreePine, Loader2 } from "lucide-react"
 import { useEffect, useState } from "react"
 import StepProgress from "@/components/ui/step-progress"
 import DecisionTree from "@/components/ui/decision-tree"
+import QuickEditModal from "@/components/ui/quick-edit-modal"
 
 interface DecisionTreeData {
   filename: string
@@ -27,6 +28,12 @@ export default function DecisionTreePage() {
   const [treeError, setTreeError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [minPopulationThreshold, setMinPopulationThreshold] = useState<number>(0)
+  const [minPopulationThresholdInput, setMinPopulationThresholdInput] = useState<string>('')
+  const [thresholdMode, setThresholdMode] = useState<'count' | 'percent'>('count')
+  const [showEditModal, setShowEditModal] = useState<'toExplain' | 'explanatory' | 'sample' | null>(null)
+  const [treatmentMode, setTreatmentMode] = useState<'independent' | 'together'>('independent')
+  const [originalTreatmentMode, setOriginalTreatmentMode] = useState<'independent' | 'together'>('independent')
+  const [selectedColumnValues, setSelectedColumnValues] = useState<{ [columnName: string]: any[] }>({})
 
   useEffect(() => {
     // Récupérer les données depuis le localStorage
@@ -35,16 +42,27 @@ export default function DecisionTreePage() {
     if (storedData) {
       try {
         const data = JSON.parse(storedData)
-        console.log("📊 Données récupérées du localStorage:", data)
+
         
         // Si l'arbre est déjà construit, l'afficher
         if (data.decisionTreeData) {
           setDecisionTreeData(data.decisionTreeData)
         }
         
+        // Récupérer le mode de traitement depuis localStorage
+        const storedTreatmentMode = localStorage.getItem('treatmentMode') as 'independent' | 'together' | null
+        if (storedTreatmentMode) {
+          setTreatmentMode(storedTreatmentMode)
+          setOriginalTreatmentMode(storedTreatmentMode)
+        }
+        
+        // Récupérer les valeurs sélectionnées des colonnes
+        const columnValues = data.selectedColumnValues || data.columnValues || data.selectedValues || {}
+        setSelectedColumnValues(columnValues)
+        
         setLoading(false)
       } catch (error) {
-        console.error('Erreur lors du parsing des données:', error)
+
         setLoading(false)
       }
     } else {
@@ -77,6 +95,10 @@ export default function DecisionTreePage() {
       formData.append("variables_explicatives", analysisResult.variables_explicatives.join(','))
       formData.append("variable_a_expliquer", analysisResult.variables_a_expliquer.join(','))
       formData.append("min_population_threshold", minPopulationThreshold.toString())
+      
+      // Récupérer le mode de traitement depuis localStorage
+      const treatmentMode = localStorage.getItem('treatmentMode') || 'independent'
+      formData.append("treatment_mode", treatmentMode)
       
       // Récupérer les modalités des variables restantes depuis le localStorage
       const storedData = localStorage.getItem('excelAnalysisData')
@@ -112,6 +134,9 @@ export default function DecisionTreePage() {
 
       setDecisionTreeData(result)
       
+      // Mettre à jour le mode original après construction
+      setOriginalTreatmentMode(treatmentMode as 'independent' | 'together')
+      
       // Sauvegarder dans le localStorage
       const currentData = localStorage.getItem('excelAnalysisData')
       if (currentData) {
@@ -121,7 +146,7 @@ export default function DecisionTreePage() {
       }
 
     } catch (err) {
-      console.error("❌ Erreur lors de la construction de l'arbre:", err)
+
       setTreeError(err instanceof Error ? err.message : "Erreur lors de la construction de l'arbre")
     } finally {
       setBuildingTree(false)
@@ -142,7 +167,7 @@ export default function DecisionTreePage() {
       <StepProgress currentStep={6} />
       <div className="max-w-7xl mx-auto">
         {/* Navigation */}
-        <div className="flex gap-2 mb-6 ml-20">
+        <div className="flex gap-2 mb-6 ml-20 flex-wrap">
           <Button variant="outline" onClick={() => router.push('/results')} className="border-green-300 text-green-700 hover:bg-green-50">
             <ArrowLeft className="h-4 w-4 mr-2" />
             Retour à l'étape précédente
@@ -154,14 +179,92 @@ export default function DecisionTreePage() {
             <Home className="h-4 w-4 mr-2" />
             Retour à l'accueil
           </Button>
+          
+          {/* Boutons de modification rapide */}
+          <div className="flex gap-2 ml-auto">
+            <Button 
+              variant="outline" 
+              onClick={() => setShowEditModal('toExplain')} 
+              className="border-blue-300 text-blue-700 hover:bg-blue-50"
+            >
+              ✏️ Modifier variables à expliquer
+            </Button>
+            <Button 
+              variant="outline" 
+              onClick={() => setShowEditModal('explanatory')} 
+              className="border-green-300 text-green-700 hover:bg-green-50"
+            >
+              ✏️ Modifier variables explicatives
+            </Button>
+            <Button 
+              variant="outline" 
+              onClick={() => setShowEditModal('sample')} 
+              className="border-yellow-300 text-yellow-700 hover:bg-yellow-50"
+            >
+              ✏️ Modifier échantillon
+            </Button>
+          </div>
+
         </div>
 
         <h1 className="text-4xl font-bold text-center mb-8 bg-green-500 bg-clip-text text-transparent">
           Etape 6 : Arbre de Décision
         </h1>
 
+        {/* Section Mode de Traitement */}
+        <div className="bg-white rounded-lg shadow-lg p-6 mb-6 ml-6">
+          <h2 className="text-xl font-semibold text-green-800 mb-4">
+            🔄 Mode de traitement des variables à expliquer
+          </h2>
+          <p className="text-sm text-gray-600 mb-4">
+            Choisissez comment traiter vos variables à expliquer :
+          </p>
+          
+          <div className="space-y-3">
+            <label className="flex items-center space-x-3 p-3 bg-green-50 border border-green-200 rounded-lg cursor-pointer hover:bg-green-100 transition-colors">
+              <input
+                type="radio"
+                name="treatmentMode"
+                value="independent"
+                checked={treatmentMode === 'independent'}
+                onChange={(e) => {
+                  setTreatmentMode(e.target.value as 'independent' | 'together')
+                  localStorage.setItem('treatmentMode', e.target.value)
+                }}
+                className="h-4 w-4 text-green-600 focus:ring-green-500"
+              />
+              <div className="flex-1">
+                <div className="font-medium text-gray-900">🔀 Traitement indépendant</div>
+                <div className="text-sm text-gray-600">
+                  Chaque variable est analysée séparément avec son propre arbre de décision
+                </div>
+              </div>
+            </label>
+            
+            <label className="flex items-center space-x-3 p-3 bg-green-50 border border-green-200 rounded-lg cursor-pointer hover:bg-green-100 transition-colors">
+              <input
+                type="radio"
+                name="treatmentMode"
+                value="together"
+                checked={treatmentMode === 'together'}
+                onChange={(e) => {
+                  setTreatmentMode(e.target.value as 'independent' | 'together')
+                  localStorage.setItem('treatmentMode', e.target.value)
+                }}
+                className="h-4 w-4 text-green-600 focus:ring-green-500"
+              />
+              <div className="flex-1">
+                <div className="font-medium text-gray-900">🔗 Traitement ensemble</div>
+                <div className="text-sm text-gray-600">
+                  Toutes les variables sont analysées ensemble (lignes ayant l'une OU l'autre valeur)
+                </div>
+              </div>
+            </label>
+          </div>
+        </div>
+
         {/* Section Arbre de Décision */}
-        <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+        <div className="bg-white rounded-lg shadow-lg p-6 mb-6 ml-6">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center">
               <TreePine className="h-8 w-8 text-blue-600 mr-3" />
@@ -176,15 +279,64 @@ export default function DecisionTreePage() {
                 <span className="text-xs text-gray-500 ml-1">
                   (0 = arbre complet)
                 </span>
+                {/* Sélecteur de mode: nombre ou pourcentage */}
+                <select
+                  value={thresholdMode}
+                  onChange={(e) => {
+                    const mode = (e.target.value as 'count' | 'percent')
+                    setThresholdMode(mode)
+                    // Recalcule le seuil à partir de la saisie existante
+                    const basePop = (decisionTreeData?.filtered_sample_size || decisionTreeData?.original_sample_size || 0)
+                    if (mode === 'percent') {
+                      const pct = parseFloat(minPopulationThresholdInput || '0')
+                      const countFromPct = Math.max(0, Math.floor(basePop * (isNaN(pct) ? 0 : pct) / 100))
+                      setMinPopulationThreshold(countFromPct)
+                    } else {
+                      const count = parseInt(minPopulationThresholdInput || '0') || 0
+                      setMinPopulationThreshold(Math.max(0, count))
+                    }
+                  }}
+                  className="px-2 py-1 border border-gray-300 rounded text-sm bg-white"
+                  disabled={buildingTree}
+                >
+                  <option value="count">Nombre</option>
+                  <option value="percent">% population</option>
+                </select>
                 <input
                   id="minPopulationThreshold"
                   type="number"
-                  min="0"
-                  value={minPopulationThreshold}
-                  onChange={(e) => setMinPopulationThreshold(parseInt(e.target.value) || 0)}
+                  min={0}
+                  max={thresholdMode === 'percent' ? 100 : undefined}
+                  step={thresholdMode === 'percent' ? 0.1 : 1}
+                  value={minPopulationThresholdInput}
+                  onChange={(e) => {
+                    const inputValue = e.target.value
+                    setMinPopulationThresholdInput(inputValue)
+                    const basePop = (decisionTreeData?.filtered_sample_size || decisionTreeData?.original_sample_size || 0)
+                    if (thresholdMode === 'percent') {
+                      const pct = inputValue === '' ? 0 : parseFloat(inputValue)
+                      const countFromPct = Math.max(0, Math.floor(basePop * ((isNaN(pct) ? 0 : pct) / 100)))
+                      setMinPopulationThreshold(countFromPct)
+                    } else {
+                      const numericValue = inputValue === '' ? 0 : parseInt(inputValue) || 0
+                      setMinPopulationThreshold(Math.max(0, numericValue))
+                    }
+                  }}
                   className="w-20 px-2 py-1 border border-gray-300 rounded text-sm"
                   disabled={buildingTree}
+                  placeholder={thresholdMode === 'percent' ? '0.0' : '0'}
                 />
+                {/* Indication de conversion quand en % */}
+                {thresholdMode === 'percent' && (
+                  <span className="text-xs text-gray-500 ml-1">
+                    ≈ {(() => {
+                      const basePop = (decisionTreeData?.filtered_sample_size || decisionTreeData?.original_sample_size || 0)
+                      const pct = parseFloat(minPopulationThresholdInput || '0')
+                      const countFromPct = Math.max(0, Math.floor(basePop * (isNaN(pct) ? 0 : pct) / 100))
+                      return countFromPct
+                    })()} lignes
+                  </span>
+                )}
               </div>
               
               {/* Bouton de construction/reconstruction */}
@@ -218,6 +370,11 @@ export default function DecisionTreePage() {
             <span className="block mt-1 text-blue-600">
               💡 <strong>Modifiez le seuil d'effectif ci-dessus et cliquez sur "Reconstruire l'arbre" pour ajuster la profondeur de l'arbre.</strong>
             </span>
+            {decisionTreeData && treatmentMode !== originalTreatmentMode && (
+              <span className="block mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-yellow-800">
+                ⚠️ <strong>Le mode de traitement a été modifié.</strong> Cliquez sur "Reconstruire l'arbre" pour appliquer le nouveau mode.
+              </span>
+            )}
           </p>
 
 
@@ -259,6 +416,10 @@ export default function DecisionTreePage() {
               pdfBase64={decisionTreeData.pdf_base64}
               pdfGenerated={decisionTreeData.pdf_generated}
               minPopulationThreshold={minPopulationThreshold}
+              variablesToExplain={decisionTreeData.variables_a_expliquer}
+              selectedColumnValues={selectedColumnValues}
+              basePopulation={decisionTreeData.filtered_sample_size || decisionTreeData.original_sample_size}
+              treatmentMode={treatmentMode}
             />
           )}
 
@@ -272,6 +433,15 @@ export default function DecisionTreePage() {
           )}
         </div>
       </div>
+      
+      {/* Modal de modification rapide */}
+      {showEditModal && (
+        <QuickEditModal
+          editType={showEditModal}
+          returnToPage="/decision-tree"
+          onClose={() => setShowEditModal(null)}
+        />
+      )}
     </div>
   )
 }

@@ -3,13 +3,14 @@ import numpy as np
 import json
 from typing import Dict, List, Any, Optional, Tuple
 from reportlab.lib.pagesizes import letter, A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 import io
 import base64
+# Imports matplotlib supprimés - les diagrammes sont maintenant générés côté frontend
 
 # Stockage temporaire en mémoire
 uploaded_files = {}
@@ -301,7 +302,8 @@ def calculate_branch_percentages(df: pd.DataFrame, explanatory_var: str,
             if total_explanatory > 0:
                 percentage = (target_and_explanatory / total_explanatory) * 100
                 branches[str(explanatory_value)] = {
-                    "count": int(target_and_explanatory),
+                    "count": int(target_and_explanatory),   # cas cibles
+                    "total": int(total_explanatory),         # effectif total de la branche
                     "percentage": round(percentage, 2),
                     "subtree": None  # Sera rempli récursivement
                 }
@@ -373,7 +375,7 @@ def construct_tree_for_value(df: pd.DataFrame, target_value: Any, target_var: st
                 # Arrêter la construction si l'effectif est trop faible
                 branch_data["subtree"] = {
                     "type": "leaf",
-                    "message": f"🛑 Branche arrêtée - Effectif insuffisant ({len(filtered_df)} < {min_population_threshold})"
+                    "message": f"[ARRET] Branche arrêtée - Effectif insuffisant ({len(filtered_df)} < {min_population_threshold})"
                 }
             else:
                 # Construire le sous-arbre récursivement
@@ -388,7 +390,8 @@ def construct_tree_for_value(df: pd.DataFrame, target_value: Any, target_var: st
 
 async def build_decision_tree(filename: str, variables_explicatives: List[str], 
                             variables_a_expliquer: List[str], selected_data: Dict[str, Any], 
-                            min_population_threshold: Optional[int] = None) -> Dict[str, Any]:
+                            min_population_threshold: Optional[int] = None,
+                            treatment_mode: str = 'independent') -> Dict[str, Any]:
     """
     Construit l'arbre de décision complet pour toutes les variables à expliquer.
     """
@@ -429,32 +432,81 @@ async def build_decision_tree(filename: str, variables_explicatives: List[str],
     # Analyser l'impact du filtrage sur les variables explicatives
     filtering_analysis = analyze_sample_filtering_impact(df, filtered_df, variables_explicatives)
     
-    # Étape 2: Construire l'arbre pour chaque variable à expliquer
+    # Étape 2: Construire l'arbre selon le mode de traitement
     
     decision_trees = {}
     
-    for target_var in variables_a_expliquer:
-        # IMPORTANT: Utiliser seulement les valeurs SÉLECTIONNÉES, pas toutes les valeurs uniques
-        if target_var in selected_data and selected_data[target_var]:
-            # Utiliser les valeurs sélectionnées par l'utilisateur
-            target_values = selected_data[target_var]
+    if treatment_mode == 'together':
+        # Mode ensemble : traiter toutes les variables ensemble
+        # Créer une variable combinée qui prend la valeur True si l'une des variables cibles est présente
+        
+        # Créer un masque pour les lignes qui ont l'une des valeurs cibles
+        combined_mask = pd.Series([False] * len(filtered_df), index=filtered_df.index)
+        
+        # Si toutes les modalités sont dans la même variable
+        if len(variables_a_expliquer) == 1:
+            target_var = variables_a_expliquer[0]
+            if target_var in selected_data and selected_data[target_var]:
+                # Utiliser toutes les modalités sélectionnées de cette variable
+                combined_mask = filtered_df[target_var].isin(selected_data[target_var])
+            else:
+                combined_mask = filtered_df[target_var].notna()
         else:
-            # Fallback: utiliser toutes les valeurs uniques si aucune sélection
-            target_values = filtered_df[target_var].dropna().unique()
+            # Si les modalités sont dans plusieurs variables différentes
+            for target_var in variables_a_expliquer:
+                if target_var in selected_data and selected_data[target_var]:
+                    var_mask = filtered_df[target_var].isin(selected_data[target_var])
+                else:
+                    var_mask = filtered_df[target_var].notna()
+                combined_mask = combined_mask | var_mask
         
+        # Créer un DataFrame avec une variable combinée
+        combined_df = filtered_df.copy()
+        combined_df['_combined_target'] = combined_mask
+        
+        # Construire l'arbre pour la variable combinée
         target_trees = {}
+        tree = construct_tree_for_value(
+            combined_df, True, '_combined_target', 
+            variables_explicatives.copy(), [],
+            min_population_threshold
+        )
+        target_trees['Combined'] = tree
         
-        for target_value in target_values:
-            # Construire l'arbre pour cette valeur
-            tree = construct_tree_for_value(
-                filtered_df, target_value, target_var, 
-                variables_explicatives.copy(), [],
-                min_population_threshold
-            )
+        # Créer un nom descriptif avec les noms des variables
+        if len(variables_a_expliquer) == 1:
+            # Une seule variable : utiliser son nom
+            combined_name = variables_a_expliquer[0]
+        else:
+            # Plusieurs variables : les joindre avec des virgules
+            combined_name = " + ".join(variables_a_expliquer)
+        
+        decision_trees[combined_name] = target_trees
+        
+    else:
+        # Mode indépendant : traiter chaque variable séparément (comportement original)
+        for target_var in variables_a_expliquer:
+            # IMPORTANT: Utiliser seulement les valeurs SÉLECTIONNÉES, pas toutes les valeurs uniques
+            if target_var in selected_data and selected_data[target_var]:
+                # Utiliser les valeurs sélectionnées par l'utilisateur
+                target_values = selected_data[target_var]
+            else:
+                # Fallback: utiliser toutes les valeurs uniques si aucune sélection
+                target_values = filtered_df[target_var].dropna().unique()
             
-            target_trees[str(target_value)] = tree
-        
-        decision_trees[target_var] = target_trees
+            target_trees = {}
+            
+            for target_value in target_values:
+                # Construire l'arbre pour cette valeur
+                tree = construct_tree_for_value(
+                    filtered_df, target_value, target_var, 
+                    variables_explicatives.copy(), [],
+                    min_population_threshold
+                )
+                
+                target_trees[str(target_value)] = tree
+            
+            decision_trees[target_var] = target_trees
     
     return {
         "filename": filename,
@@ -462,8 +514,149 @@ async def build_decision_tree(filename: str, variables_explicatives: List[str],
         "variables_a_expliquer": variables_a_expliquer,
         "filtered_sample_size": len(filtered_df),
         "original_sample_size": len(df),
-        "decision_trees": decision_trees
+        "decision_trees": decision_trees,
+        "treatment_mode": treatment_mode
     }
+
+def create_tree_diagram(decision_trees: Dict[str, Any]) -> str:
+    """
+    Crée un diagramme visuel de l'arbre de décision avec matplotlib.
+    """
+    try:
+        fig, ax = plt.subplots(1, 1, figsize=(16, 12))
+        ax.set_xlim(0, 12)
+        ax.set_ylim(0, 12)
+        ax.axis('off')
+        
+        # Couleurs pour les différents types de nœuds
+        node_colors = {
+            'root': '#4CAF50',      # Vert pour la racine
+            'node': '#2196F3',      # Bleu pour les nœuds
+            'leaf': '#FF9800',      # Orange pour les feuilles
+            'stopped': '#F44336'    # Rouge pour les branches arrêtées
+        }
+        
+        y_positions = []
+        x_positions = []
+        
+        def draw_node(x, y, text, node_type='node', width=1.5, height=0.8):
+            """Dessine un nœud de l'arbre"""
+            color = node_colors.get(node_type, node_colors['node'])
+            
+            # Créer un rectangle arrondi
+            rect = FancyBboxPatch(
+                (x - width/2, y - height/2), width, height,
+                boxstyle="round,pad=0.1",
+                facecolor=color,
+                edgecolor='black',
+                linewidth=1,
+                alpha=0.8
+            )
+            ax.add_patch(rect)
+            
+            # Ajouter le texte
+            ax.text(x, y, text, ha='center', va='center', 
+                   fontsize=8, fontweight='bold', color='white',
+                   wrap=True)
+            
+            return x, y
+        
+        def draw_connection(x1, y1, x2, y2):
+            """Dessine une connexion entre deux nœuds"""
+            ax.plot([x1, x2], [y1, y2], 'k-', linewidth=1.5, alpha=0.7)
+        
+        def draw_tree_recursive(tree_data, x, y, level=0, max_level=5):
+            """Dessine l'arbre récursivement"""
+            if level > max_level:
+                return
+            
+            # Dessiner le nœud actuel
+            if level == 0:
+                node_type = 'root'
+                text = "Racine"
+            elif tree_data.get('type') == 'leaf':
+                node_type = 'leaf'
+                text = f"Feuille\n{tree_data.get('message', '')[:30]}..."
+            else:
+                node_type = 'node'
+                text = f"{tree_data.get('variable', 'Nœud')}\n(σ: {tree_data.get('variance', 0):.2f})"
+            
+            draw_node(x, y, text, node_type)
+            
+            # Dessiner les branches
+            if tree_data.get('branches') and level < max_level:
+                branches = list(tree_data['branches'].items())
+                num_branches = len(branches)
+                
+                if num_branches > 0:
+                    # Calculer les positions des branches avec plus d'espace
+                    branch_spacing = 1.5
+                    start_x = x - (num_branches - 1) * branch_spacing / 2
+                    
+                    for i, (branch_value, branch_data) in enumerate(branches):
+                        branch_x = start_x + i * branch_spacing
+                        branch_y = y - 1.5
+                        
+                        # Dessiner la connexion
+                        draw_connection(x, y - 0.4, branch_x, branch_y + 0.4)
+                        
+                        # Dessiner l'étiquette de la branche
+                        ax.text((x + branch_x) / 2, (y + branch_y) / 2, 
+                               f"{branch_value}\n({branch_data.get('count', 0)})", 
+                               ha='center', va='center', fontsize=6,
+                               bbox=dict(boxstyle="round,pad=0.1", facecolor='lightgray', alpha=0.7))
+                        
+                        # Récursion pour le sous-arbre
+                        if branch_data.get('subtree'):
+                            draw_tree_recursive(branch_data['subtree'], branch_x, branch_y, level + 1, max_level)
+                        else:
+                            # Si c'est une feuille finale, la dessiner
+                            if branch_data.get('count', 0) > 0:
+                                draw_node(branch_x, branch_y, f"Feuille\n{branch_data.get('count', 0)} cas", 'leaf', 1.2, 0.6)
+        
+        # Dessiner chaque arbre
+        y_start = 10
+        for i, (target_var, target_trees) in enumerate(decision_trees.items()):
+            # Titre de l'arbre
+            ax.text(6, y_start + 1, f"Arbre pour: {target_var}", 
+                   ha='center', va='center', fontsize=14, fontweight='bold')
+            
+            # Dessiner le premier arbre de cette variable
+            if target_trees:
+                first_tree = list(target_trees.values())[0]
+                draw_tree_recursive(first_tree, 6, y_start, 0, 5)
+            
+            y_start -= 5
+        
+        # Titre général
+        ax.text(6, 11.5, "Diagramme de l'Arbre de Décision", 
+               ha='center', va='center', fontsize=16, fontweight='bold')
+        
+        # Légende
+        legend_elements = [
+            patches.Patch(color=node_colors['root'], label='Racine'),
+            patches.Patch(color=node_colors['node'], label='Nœud de décision'),
+            patches.Patch(color=node_colors['leaf'], label='Feuille finale'),
+            patches.Patch(color=node_colors['stopped'], label='Branche arrêtée')
+        ]
+        ax.legend(handles=legend_elements, loc='upper right', bbox_to_anchor=(0.98, 0.98))
+        
+        # Sauvegarder en base64
+        buffer = io.BytesIO()
+        plt.savefig(buffer, format='png', dpi=150, bbox_inches='tight', 
+                   facecolor='white', edgecolor='none')
+        buffer.seek(0)
+        
+        # Convertir en base64
+        image_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+        buffer.close()
+        plt.close(fig)
+        
+        return image_base64
+        
+    except Exception as e:
+
+        return ""
 
 def generate_tree_pdf(decision_trees: Dict[str, Any], filename: str) -> str:
     """
@@ -530,6 +723,10 @@ def generate_tree_pdf(decision_trees: Dict[str, Any], filename: str) -> str:
         # Informations du fichier
         story.append(Paragraph(f"📁 <b>Fichier:</b> {filename}", styles['Normal']))
         story.append(Spacer(1, 15))
+        
+        # Note: Les diagrammes sont maintenant générés côté frontend avec Chart.js
+        story.append(Paragraph("<b>📊 Note:</b> Les diagrammes visuels sont générés côté client avec Chart.js", styles['Normal']))
+        story.append(Spacer(1, 10))
         
         # Fonction récursive pour afficher l'arbre avec structure claire
         def add_tree_to_story(node, level=0, path=""):
@@ -618,12 +815,13 @@ def generate_tree_pdf(decision_trees: Dict[str, Any], filename: str) -> str:
 
 async def build_decision_tree_with_pdf(filename: str, variables_explicatives: List[str], 
                                      variables_a_expliquer: List[str], selected_data: Dict[str, Any], 
-                                     min_population_threshold: Optional[int] = None) -> Dict[str, Any]:
+                                     min_population_threshold: Optional[int] = None,
+                                     treatment_mode: str = 'independent') -> Dict[str, Any]:
     """
     Construit l'arbre de décision et génère le PDF correspondant.
     """
     # Construire l'arbre
-    tree_result = await build_decision_tree(filename, variables_explicatives, variables_a_expliquer, selected_data, min_population_threshold)
+    tree_result = await build_decision_tree(filename, variables_explicatives, variables_a_expliquer, selected_data, min_population_threshold, treatment_mode)
     
     if "error" in tree_result:
         return tree_result

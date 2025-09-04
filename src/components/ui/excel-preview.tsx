@@ -43,6 +43,7 @@ function DataSelectionAccordion({
   onDataSelection: (columnName: string, value: any, checked: boolean) => void
 }) {
   const [isExpanded, setIsExpanded] = useState(false)
+  const [searchTerm, setSearchTerm] = useState('')
 
   return (
     <Card className="border-2">
@@ -51,7 +52,7 @@ function DataSelectionAccordion({
         onClick={() => setIsExpanded(!isExpanded)}
       >
         <div className="flex items-center justify-between">
-          <div>
+          <div className="flex-1">
             <CardTitle className="text-lg">📊 {columnName}</CardTitle>
             <p className="text-sm text-gray-600">
               {selectedData.length > 0 
@@ -60,18 +61,77 @@ function DataSelectionAccordion({
               }
             </p>
           </div>
-          {isExpanded ? (
-            <ChevronDown className="h-5 w-5 text-gray-500" />
-          ) : (
-            <ChevronRight className="h-5 w-5 text-gray-500" />
-          )}
+          
+          <div className="flex items-center space-x-4">
+            {/* Checkbox pour sélectionner toutes les modalités */}
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={selectedData.length === data.length && data.length > 0}
+                onChange={(e) => {
+                  e.stopPropagation()
+                  if (e.target.checked) {
+                    // Cocher toutes les modalités
+                    data.forEach(value => {
+                      if (!selectedData.includes(value)) {
+                        onDataSelection(columnName, value, true)
+                      }
+                    })
+                  } else {
+                    // Décocher toutes les modalités
+                    selectedData.forEach(value => {
+                      onDataSelection(columnName, value, false)
+                    })
+                  }
+                }}
+                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+
+            </div>
+            
+            {/* Indicateur d'expansion */}
+            {isExpanded ? (
+              <ChevronDown className="h-5 w-5 text-gray-500" />
+            ) : (
+              <ChevronRight className="h-5 w-5 text-gray-500" />
+            )}
+          </div>
         </div>
       </CardHeader>
       
       {isExpanded && (
         <CardContent>
+          {/* Barre de recherche pour les modalités */}
+          <div className="mb-4">
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="🔍 Rechercher une modalité..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </div>
+            </div>
+            {searchTerm && (
+              <p className="text-sm text-gray-500 mt-1">
+                {data.filter((value: any) => 
+                  String(value).toLowerCase().includes(searchTerm.toLowerCase())
+                ).length} modalité(s) trouvée(s) sur {data.length}
+              </p>
+            )}
+          </div>
+          
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
-            {data.map((value, index) => (
+            {data
+              .filter((value: any) => 
+                !searchTerm || String(value).toLowerCase().includes(searchTerm.toLowerCase())
+              )
+              .map((value, index) => (
               <label key={index} className="flex items-center space-x-2 p-2 border rounded hover:bg-gray-50 cursor-pointer">
                 <input
                   type="checkbox"
@@ -115,10 +175,21 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
   const [expandedColumns, setExpandedColumns] = useState<{ [columnName: string]: boolean }>({})
   const [columnValues, setColumnValues] = useState<{ [columnName: string]: any[] }>({})
   const [selectedColumnValues, setSelectedColumnValues] = useState<{ [columnName: string]: any[] }>({})
+  
+  // État pour le mode de traitement des variables à expliquer
+  const [treatmentMode, setTreatmentMode] = useState<'independent' | 'together'>('independent')
 
   // Vérifier le statut du serveur au chargement
   useEffect(() => {
     checkServerStatus()
+  }, [])
+
+  // Charger le mode de traitement depuis localStorage
+  useEffect(() => {
+    const savedTreatmentMode = localStorage.getItem('treatmentMode')
+    if (savedTreatmentMode && (savedTreatmentMode === 'independent' || savedTreatmentMode === 'together')) {
+      setTreatmentMode(savedTreatmentMode as 'independent' | 'together')
+    }
   }, [])
 
   // Charger les données quand le fichier change
@@ -159,7 +230,7 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
   ) || []
 
   // Filtrer les colonnes restantes basé sur la recherche
-  const filteredRemainingColumns = remainingData?.remaining_columns.filter(column =>
+  const filteredRemainingColumns = remainingData?.remaining_columns?.filter(column =>
     column.toLowerCase().includes(dataSearchTerm.toLowerCase())
   ) || []
 
@@ -175,7 +246,7 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
         setServerStatus('offline')
       }
     } catch (err) {
-      console.error("❌ Serveur inaccessible:", err)
+
       setServerStatus('offline')
     }
   }
@@ -201,7 +272,7 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
       }
 
       const data: PreviewData = await response.json()
-      console.log("✅ Données reçues de l'API:", data)
+
       setPreviewData(data)
       
       // Initialiser la sélection des colonnes
@@ -214,7 +285,7 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
       })
       setColumnSelection(initialSelection)
     } catch (err) {
-      console.error("❌ Erreur API:", err)
+
       setError(err instanceof Error ? err.message : "Une erreur est survenue")
     } finally {
       setLoading(false)
@@ -278,15 +349,12 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
     if (!isExpanded && !columnValues[columnName]) {
       // Charger les valeurs de la colonne depuis l'API
       try {
-        console.log("🔄 Chargement des valeurs pour la colonne:", columnName)
+
         const formData = new FormData()
         formData.append("filename", previewData.filename)
         formData.append("column_name", columnName)
 
-        console.log("📤 Envoi de la requête avec:", {
-          filename: previewData.filename,
-          column_name: columnName
-        })
+
 
         const response = await fetch("http://localhost:8000/excel/get-column-values", {
           method: "POST",
@@ -295,21 +363,21 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
 
         if (!response.ok) {
           const errorText = await response.text()
-          console.error("❌ Erreur API:", response.status, errorText)
+
           throw new Error(`Erreur HTTP: ${response.status} - ${errorText}`)
         }
 
         const result = await response.json()
-        console.log("✅ Réponse reçue pour", columnName, ":", result)
+
         
         setColumnValues(prev => ({
           ...prev,
           [columnName]: result.unique_values
         }))
         
-        console.log("✅ Valeurs mises à jour pour", columnName, ":", result.unique_values)
+
       } catch (err) {
-        console.error("❌ Erreur lors du chargement des valeurs:", err)
+
         setError(err instanceof Error ? err.message : "Erreur lors du chargement des valeurs")
         return
       }
@@ -321,7 +389,7 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
       [columnName]: !isExpanded
     }))
     
-    console.log("🔄 État d'expansion pour", columnName, ":", !isExpanded)
+
   }
 
   // Fonction pour gérer la sélection de la checkbox "Variable à expliquer"
@@ -349,7 +417,7 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
       // Si on coche la checkbox, charger les valeurs si elles ne sont pas encore disponibles
       if (!columnValues[columnName]) {
         try {
-          console.log("🔄 Chargement automatique des valeurs pour", columnName)
+
           const formData = new FormData()
           formData.append("filename", previewData?.filename || '') // Use optional chaining
           formData.append("column_name", columnName)
@@ -376,7 +444,7 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
             [columnName]: [...result.unique_values]
           }))
         } catch (err) {
-          console.error("❌ Erreur lors du chargement automatique des valeurs:", err)
+
           setError(err instanceof Error ? err.message : "Erreur lors du chargement des valeurs")
           return
         }
@@ -501,6 +569,7 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
         }
         // Marquer l'étape 2 comme terminée
         localStorage.setItem('toExplainVariables', JSON.stringify(variablesToExplain))
+        localStorage.setItem('treatmentMode', treatmentMode)
         setIsSubmitting(false)
       } else if (step === 'explanatory-variables') {
         // Vérifier qu'on a au moins une variable explicative
@@ -519,11 +588,7 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
       formData.append("variables_explicatives", explanatoryVariables.join(','))
       formData.append("variable_a_expliquer", variablesToExplain.join(','))
 
-      console.log("📤 Envoi des données:", {
-        filename: previewData.filename,
-        variables_explicatives: explanatoryVariables,
-        variable_a_expliquer: variablesToExplain
-      })
+
 
       const response = await fetch("http://localhost:8000/excel/select-columns", {
         method: "POST",
@@ -532,12 +597,12 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
 
       if (!response.ok) {
         const errorText = await response.text()
-        console.error("❌ Erreur API:", response.status, errorText)
+
         throw new Error(`Erreur HTTP: ${response.status} - ${errorText}`)
       }
 
       const result = await response.json()
-        console.log("✅ Résultat select-columns (colonnes restantes):", result)
+
         
         setRemainingData(result)
         setStep('remaining-data')
@@ -562,12 +627,7 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
         formData.append("variable_a_expliquer", remainingData!.variables_a_expliquer.join(','))
         formData.append("selected_data", JSON.stringify(finalSelectedData))
 
-        console.log("📤 Envoi final avec données sélectionnées:", {
-          filename: previewData.filename,
-          variables_explicatives: remainingData!.variables_explicatives,
-          variable_a_expliquer: remainingData!.variables_a_expliquer,
-          selected_data: finalSelectedData
-        })
+
 
         const response = await fetch("http://localhost:8000/excel/select-columns", {
           method: "POST",
@@ -576,12 +636,12 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
 
         if (!response.ok) {
           const errorText = await response.text()
-          console.error("❌ Erreur API:", response.status, errorText)
+
           throw new Error(`Erreur HTTP: ${response.status} - ${errorText}`)
         }
 
         const result = await response.json()
-        console.log("✅ Résultat final:", result)
+
         
         // Stocker les données dans le localStorage (version optimisée pour éviter le dépassement de quota)
       const dataToStore = {
@@ -598,17 +658,17 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
         
         try {
           localStorage.setItem('excelAnalysisData', JSON.stringify(dataToStore))
-          console.log("✅ Données stockées avec succès dans le localStorage")
+
         } catch (storageError) {
-          console.warn("⚠️ Erreur de stockage localStorage, tentative de nettoyage et re-stockage...")
+
           
           // Nettoyer le localStorage et réessayer
           try {
             localStorage.clear()
       localStorage.setItem('excelAnalysisData', JSON.stringify(dataToStore))
-            console.log("✅ Données stockées après nettoyage du localStorage")
+
           } catch (finalError) {
-            console.error("❌ Impossible de stocker dans le localStorage:", finalError)
+
             // Continuer sans stockage local
           }
         }
@@ -618,20 +678,13 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
           onStepChange(5, "Vérification des variables")
         }
         
-        // Afficher un résumé des données stockées
-        console.log("💾 Données stockées dans le localStorage:", {
-          variables_explicatives: result.variables_explicatives,
-          variables_a_expliquer: result.variables_a_expliquer,
-          selected_data_keys: Object.keys(result.selected_data || {}),
-          selected_column_values_keys: Object.keys(selectedColumnValues),
-          remaining_data_keys: Object.keys(selectedRemainingData)
-        })
+
       
       // Naviguer vers la page des résultats
       router.push('/results')
       }
     } catch (err) {
-      console.error("❌ Erreur lors de la soumission:", err)
+
       setError(err instanceof Error ? err.message : "Erreur lors de la soumission")
     } finally {
       setIsSubmitting(false)
@@ -740,7 +793,7 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
             <p className="text-sm text-green-600">
               ✅ Sélectionnez les colonnes que vous voulez expliquer ou prédire
             </p>
-          </CardHeader>
+        </CardHeader>
         <CardContent>
             {/* Barre de recherche */}
             <div className="mb-4">
@@ -823,10 +876,39 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
                     {/* Contenu expandable avec les valeurs de la colonne */}
                     {expandedColumns[column] && (
                       <div className="p-4 bg-white border-t border-green-200">
+                        {/* Barre de recherche pour les modalités */}
+                        <div className="mb-4">
+                          <div className="relative">
+                            <input
+                              type="text"
+                              placeholder="🔍 Rechercher une modalité..."
+                              value={dataSearchTerm}
+                              onChange={(e) => setDataSearchTerm(e.target.value)}
+                              className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                            />
+                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                              <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                              </svg>
+                            </div>
+                          </div>
+                          {dataSearchTerm && (
+                            <p className="text-sm text-gray-500 mt-1">
+                              {columnValues[column]?.filter((value: any) => 
+                                String(value).toLowerCase().includes(dataSearchTerm.toLowerCase())
+                              ).length || 0} modalité(s) trouvée(s) sur {columnValues[column]?.length || 0}
+                            </p>
+                          )}
+                        </div>
+                        
                         {/* Affichage des valeurs uniques */}
                         {columnValues[column] ? (
                           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2 max-h-64 overflow-y-auto">
-                            {columnValues[column].map((value, valueIndex) => (
+                            {columnValues[column]
+                              .filter((value: any) => 
+                                !dataSearchTerm || String(value).toLowerCase().includes(dataSearchTerm.toLowerCase())
+                              )
+                              .map((value, valueIndex) => (
                               <label key={valueIndex} className="flex items-center space-x-2 p-2 border rounded hover:bg-gray-50 cursor-pointer">
                                 <input
                                   type="checkbox"
@@ -869,8 +951,9 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
                 ))}
               </div>
 
-
             </div>
+            
+
             
             <div className="mt-6 pt-4 border-t">
               <Button 
@@ -917,10 +1000,10 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
                 <div className="text-center p-0.5 bg-purple-50 rounded text-xs">
                   <div className="font-bold text-purple-600">{(file.size / 1024).toFixed(1)} KB</div>
                   <div className="text-purple-600">Taille</div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
         </div>
 
         {/* Sélection des variables explicatives - Section principale avec largeur d'origine */}
@@ -929,8 +1012,8 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
             <CardTitle className="text-xl text-blue-800">🔍 Sélection des variables explicatives</CardTitle>
             <p className="text-sm text-blue-600">
               ✅ Sélectionnez les colonnes qui vont expliquer ou prédire vos variables cibles
-            </p>
-          </CardHeader>
+          </p>
+        </CardHeader>
         <CardContent>
             {/* Barre de recherche */}
             <div className="mb-4">
@@ -958,9 +1041,9 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
           <div className="max-h-64 overflow-y-auto space-y-4 pr-2">
               {filteredExplanatoryColumns.map((column, index) => (
                 <div key={`explanatory-${index}`} className="flex items-center justify-between p-4 border border-blue-200 rounded-lg hover:bg-blue-50 min-w-0">
-                  <div className="flex-1">
+                <div className="flex-1">
                     <h4 className="font-medium text-gray-900 break-words">{column}</h4>
-                    <p className="text-sm text-gray-500">Colonne {index + 1}</p>
+                  <p className="text-sm text-gray-500">Colonne {index + 1}</p>
                 </div>
                 
                   <div className="flex items-center space-x-2">
@@ -1099,9 +1182,9 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
                   onDataSelection={handleDataSelection}
                 />
               ))}
-            </div>
-          </CardContent>
-        </Card>
+          </div>
+        </CardContent>
+      </Card>
 
         <div className="mt-6 pt-4 border-t">
           <div className="flex gap-4">

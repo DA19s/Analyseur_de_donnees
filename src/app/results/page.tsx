@@ -7,6 +7,7 @@ import { ArrowLeft, Home, TreePine, Loader2 } from "lucide-react"
 import { useEffect, useState } from "react"
 import StepProgress from "@/components/ui/step-progress"
 import DecisionTree from "@/components/ui/decision-tree"
+import QuickEditModal from "@/components/ui/quick-edit-modal"
 
 // Composant pour afficher les variables avec leurs modalités directement visibles
 function VariableDisplay({ 
@@ -134,6 +135,7 @@ export default function Results() {
   const [columnSelection, setColumnSelection] = useState<ColumnSelection>({})
   const [previewData, setPreviewData] = useState<PreviewData | null>(null)
   const [selectedColumnValues, setSelectedColumnValues] = useState<{ [columnName: string]: any[] }>({})
+  const [showEditModal, setShowEditModal] = useState<'toExplain' | 'explanatory' | 'sample' | null>(null)
   const [selectedRemainingData, setSelectedRemainingData] = useState<{ [columnName: string]: any[] }>({})
   const [loading, setLoading] = useState(true)
 
@@ -144,7 +146,7 @@ export default function Results() {
     if (storedData) {
       try {
         const data = JSON.parse(storedData)
-        console.log("📊 Données récupérées du localStorage:", data)
+
         setAnalysisResult(data.analysisResult)
         setColumnSelection(data.columnSelection)
         
@@ -161,16 +163,11 @@ export default function Results() {
         setSelectedColumnValues(data.selectedColumnValues || {})
         setSelectedRemainingData(data.selectedRemainingData || {})
         
-        // Log pour déboguer
-        console.log("🔍 Données récupérées dans /results:", {
-          selectedRemainingData: data.selectedRemainingData,
-          selectedColumnValues: data.selectedColumnValues,
-          analysisResult: data.analysisResult
-        })
+
         
         setLoading(false)
       } catch (error) {
-        console.error('Erreur lors du parsing des données:', error)
+
         setLoading(false)
       }
     } else {
@@ -230,7 +227,7 @@ export default function Results() {
       <StepProgress currentStep={5} />
       <div className="max-w-6xl mx-auto">
         {/* Navigation */}
-        <div className="flex gap-2 mb-6">
+        <div className="flex gap-2 mb-6 flex-wrap">
           <Button variant="outline" onClick={() => router.push('/variables')} className="border-purple-300 text-purple-700 hover:bg-purple-50">
             <ArrowLeft className="h-4 w-4 mr-2" />
             Retour aux variables
@@ -242,6 +239,31 @@ export default function Results() {
             <Home className="h-4 w-4 mr-2" />
             Accueil
           </Button>
+          
+          {/* Boutons de modification rapide */}
+          <div className="flex gap-2 ml-auto">
+            <Button 
+              variant="outline" 
+              onClick={() => setShowEditModal('toExplain')} 
+              className="border-blue-300 text-blue-700 hover:bg-blue-50"
+            >
+              ✏️ Modifier variables à expliquer
+            </Button>
+            <Button 
+              variant="outline" 
+              onClick={() => setShowEditModal('explanatory')} 
+              className="border-green-300 text-green-700 hover:bg-green-50"
+            >
+              ✏️ Modifier variables explicatives
+            </Button>
+            <Button 
+              variant="outline" 
+              onClick={() => setShowEditModal('sample')} 
+              className="border-yellow-300 text-yellow-700 hover:bg-yellow-50"
+            >
+              ✏️ Modifier échantillon
+            </Button>
+          </div>
         </div>
 
         <h1 className="text-4xl font-bold text-center mb-8 bg-purple-500 bg-clip-text text-transparent">
@@ -274,7 +296,7 @@ export default function Results() {
         )}
 
         {/* Variables explicatives */}
-        {Object.keys(columnSelection || {}).filter(col => columnSelection[col].isExplanatory).length > 0 && (
+        {analysisResult?.variables_explicatives && analysisResult.variables_explicatives.length > 0 && (
           <Card className="mb-6 shadow-lg">
             <CardHeader>
               <CardTitle>🔍 Variables explicatives</CardTitle>
@@ -284,7 +306,7 @@ export default function Results() {
             </CardHeader>
             <CardContent>
               <div className="space-y-2">
-                {Object.keys(columnSelection || {}).filter(col => columnSelection[col].isExplanatory).map(col => (
+                {analysisResult.variables_explicatives.map(col => (
                   <div key={col} className="flex items-center p-3 bg-blue-50 rounded-lg border border-blue-200">
                     <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center mr-3">
                       <span className="text-blue-600 text-sm">🔍</span>
@@ -303,7 +325,8 @@ export default function Results() {
 
 
         {/* Modalités de l'échantillon sélectionnées */}
-        {selectedRemainingData && Object.keys(selectedRemainingData).length > 0 && (
+        {selectedRemainingData && Object.keys(selectedRemainingData).length > 0 && 
+         Object.entries(selectedRemainingData).some(([_, values]) => values && values.length > 0) && (
           <Card className="mb-6 shadow-lg">
             <CardHeader>
               <CardTitle>📊 Modalités de l'échantillon sélectionnées</CardTitle>
@@ -313,15 +336,17 @@ export default function Results() {
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {Object.entries(selectedRemainingData).map(([columnName, values]) => (
-                  <VariableDisplay
-                    key={columnName}
-                    columnName={columnName}
-                    values={values}
-                    color="purple"
-                    icon="📊"
-                  />
-                ))}
+                {Object.entries(selectedRemainingData)
+                  .filter(([columnName, values]) => values && values.length > 0)
+                  .map(([columnName, values]) => (
+                    <VariableDisplay
+                      key={columnName}
+                      columnName={columnName}
+                      values={values}
+                      color="purple"
+                      icon="📊"
+                    />
+                  ))}
               </div>
               <div className="mt-4 p-3 bg-purple-50 rounded-lg border border-purple-200">
                 <p className="text-sm text-purple-700">
@@ -349,6 +374,15 @@ export default function Results() {
         </Card>
 
       </div>
+      
+      {/* Modal de modification rapide */}
+      {showEditModal && (
+        <QuickEditModal
+          editType={showEditModal}
+          returnToPage="/results"
+          onClose={() => setShowEditModal(null)}
+        />
+      )}
     </div>
   )
 }

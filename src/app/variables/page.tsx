@@ -16,36 +16,46 @@ export default function Var() {
   const handleStepChange = (step: number, title: string) => {
     setCurrentStep(step)
     setStepTitle(title)
-    console.log(`🔄 Étape mise à jour: ${step} - ${title}`)
+
   }
 
   useEffect(() => {
-    // Déterminer l'étape actuelle basée sur le localStorage
-    const remainingData = localStorage.getItem('remainingData')
-    const hasExplanatoryVars = localStorage.getItem('explanatoryVariables')
-    const hasToExplainVars = localStorage.getItem('toExplainVariables')
+    // Vérifier s'il y a une étape spécifique demandée depuis les pages de résultats/arbre
+    const requestedStep = localStorage.getItem('currentStep')
+    const requestedTitle = localStorage.getItem('stepTitle')
     
-    console.log("🔍 État du localStorage:", {
-      remainingData: !!remainingData,
-      hasExplanatoryVars: !!hasExplanatoryVars,
-      hasToExplainVars: !!hasToExplainVars
-    })
-    
-    // Quand on revient de la page des résultats, on revient TOUJOURS à l'étape 2
-    // On nettoie le localStorage pour repartir de zéro
-    if (hasToExplainVars || hasExplanatoryVars || remainingData) {
-      // Nettoyer le localStorage pour revenir à l'étape 2
-      localStorage.removeItem('remainingData')
-      localStorage.removeItem('excelAnalysisData')
-      localStorage.removeItem('toExplainVariables')
-      localStorage.removeItem('explanatoryVariables')
-      setStepTitle("Sélection des variables à expliquer")
-      setCurrentStep(2)
-      console.log("✅ Retour à l'étape 2 : Sélection des variables à expliquer")
+    if (requestedStep && requestedTitle) {
+      // Utiliser l'étape demandée
+      setCurrentStep(parseInt(requestedStep))
+      setStepTitle(requestedTitle)
+      // Nettoyer les indicateurs de retour
+      localStorage.removeItem('currentStep')
+      localStorage.removeItem('stepTitle')
+
     } else {
-      setStepTitle("Sélection des variables à expliquer")
-      setCurrentStep(2)
-      console.log("✅ Étape 2 : Sélection des variables à expliquer")
+      // Déterminer l'étape actuelle basée sur le localStorage
+      const remainingData = localStorage.getItem('remainingData')
+      const hasExplanatoryVars = localStorage.getItem('explanatoryVariables')
+      const hasToExplainVars = localStorage.getItem('toExplainVariables')
+      
+
+      
+      // Quand on revient de la page des résultats, on revient TOUJOURS à l'étape 2
+      // On nettoie le localStorage pour repartir de zéro
+      if (hasToExplainVars || hasExplanatoryVars || remainingData) {
+        // Nettoyer le localStorage pour revenir à l'étape 2
+        localStorage.removeItem('remainingData')
+        localStorage.removeItem('excelAnalysisData')
+        localStorage.removeItem('toExplainVariables')
+        localStorage.removeItem('explanatoryVariables')
+        setStepTitle("Sélection des variables à expliquer")
+        setCurrentStep(2)
+
+      } else {
+        setStepTitle("Sélection des variables à expliquer")
+        setCurrentStep(2)
+
+      }
     }
   }, [])
 

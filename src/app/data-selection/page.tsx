@@ -107,8 +107,17 @@ export default function DataSelection() {
       }
       localStorage.setItem('excelAnalysisData', JSON.stringify(dataToStore))
       
-      // Naviguer vers la page des résultats
-      router.push('/results')
+      // Vérifier s'il faut retourner à une page spécifique
+      const returnToPage = localStorage.getItem('returnToPage')
+      if (returnToPage) {
+        // Nettoyer l'indicateur de retour
+        localStorage.removeItem('returnToPage')
+        // Retourner à la page d'origine
+        router.push(returnToPage)
+      } else {
+        // Naviguer vers la page des résultats (comportement normal)
+        router.push('/results')
+      }
     } catch (err) {
       console.error("❌ Erreur lors de la soumission:", err)
       alert("Erreur lors de la soumission: " + (err instanceof Error ? err.message : "Erreur inconnue"))

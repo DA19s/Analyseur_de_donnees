@@ -56,7 +56,8 @@ async def build_decision_tree_endpoint(
     variables_explicatives: str = Form(...),
     variable_a_expliquer: str = Form(...),
     selected_data: str = Form(...),
-    min_population_threshold: Optional[int] = Form(None)
+    min_population_threshold: Optional[int] = Form(None),
+    treatment_mode: Optional[str] = Form('independent')
 ):
     """
     Construit l'arbre de décision et génère le PDF correspondant.
@@ -87,7 +88,8 @@ async def build_decision_tree_endpoint(
             variables_explicatives_list,
             variables_a_expliquer_list,
             selected_data_dict,
-            min_population_threshold
+            min_population_threshold,
+            treatment_mode
         )
         
         return result

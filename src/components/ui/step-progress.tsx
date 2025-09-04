@@ -6,32 +6,39 @@ import { Check, Circle } from "lucide-react"
 interface Step {
   title: string
   description: string
+  color: string
 }
 
 const steps: Step[] = [
   {
     title: "Upload du fichier",
-    description: "Étape 1"
+    description: "Étape 1",
+    color: "blue"
   },
   {
     title: "Sélection des variables à expliquer",
-    description: "Étape 2"
+    description: "Étape 2",
+    color: "green"
   },
   {
     title: "Sélection des variables explicatives",
-    description: "Étape 3"
+    description: "Étape 3",
+    color: "blue"
   },
   {
     title: "Définition de l'échantillon à traiter",
-    description: "Étape 4"
+    description: "Étape 4",
+    color: "orange"
   },
   {
     title: "Vérification des variables",
-    description: "Étape 5"
+    description: "Étape 5",
+    color: "purple"
   },
   {
     title: "Arbre de décision",
-    description: "Étape 6"
+    description: "Étape 6",
+    color: "green"
   }
 ]
 
@@ -61,10 +68,10 @@ export default function StepProgress({ currentStep }: StepProgressProps) {
               <div className="flex-shrink-0">
                 {isCompleted ? (
                   <div className="w-5 h-5 bg-gray-300 rounded-full flex items-center justify-center">
-                    <Circle className="w-3 h-3 text-gray-500" />
+                    <Check className="w-3 h-3 text-gray-500" />
                   </div>
                 ) : isCurrent ? (
-                  <div className="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center animate-pulse">
+                  <div className={`w-5 h-5 bg-${step.color}-500 rounded-full flex items-center justify-center animate-pulse`}>
                     <Circle className="w-3 h-3 text-white fill-current" />
                   </div>
                 ) : (
@@ -78,14 +85,14 @@ export default function StepProgress({ currentStep }: StepProgressProps) {
               <div className="flex-1 min-w-0">
                 <div className={`text-xs font-medium ${
                   isCompleted ? 'text-gray-500' : 
-                  isCurrent ? 'text-blue-600' : 
+                  isCurrent ? `text-${step.color}-600` : 
                   'text-gray-400'
                 }`}>
                   {step.description}
                 </div>
                 <div className={`text-xs break-words leading-tight ${
                   isCompleted ? 'text-gray-400' : 
-                  isCurrent ? 'text-blue-500' : 
+                  isCurrent ? `text-${step.color}-500` : 
                   'text-gray-400'
                 }`}>
                   {step.title}
