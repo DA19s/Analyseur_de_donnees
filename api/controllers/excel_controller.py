@@ -80,8 +80,8 @@ async def preview_excel(file):
         # 4) Enregistrer la référence au fichier (DF complet non chargé pour accélérer la preview)
         uploaded_files[file.filename] = {"path": tmp_path, "df": None}
 
-        return {
-            "filename": file.filename,
+    return {
+        "filename": file.filename,
             "rows": int(total_rows),
             "columns": sample_df.columns.tolist(),
             "preview": sample_df.head(5).to_dict(orient="records")
@@ -93,7 +93,7 @@ async def preview_excel(file):
 async def select_columns(filename: str, variables_explicatives: List[str], variable_a_expliquer: List[str], selected_data: Dict = None):
     if filename not in uploaded_files:
         return {"error": "Fichier non trouvé. Faites d'abord /excel/preview."}
-
+    
     # Charger le DataFrame complet à la demande (une seule fois)
     file_ref = uploaded_files[filename]
     if file_ref.get("df") is None:
@@ -484,7 +484,16 @@ async def build_decision_tree(filename: str, variables_explicatives: List[str],
     if filename not in uploaded_files:
         return {"error": "Fichier non trouvé. Faites d'abord /excel/preview."}
     
-    df = uploaded_files[filename]
+    # Charger le DataFrame complet depuis la référence de fichier
+    file_ref = uploaded_files[filename]
+    if not isinstance(file_ref, dict) or "path" not in file_ref:
+        return {"error": "Référence de fichier invalide. Refaire l'étape de preview."}
+    if file_ref.get("df") is None:
+        try:
+            file_ref["df"] = _read_excel(file_ref["path"])  # charge le dataset complet
+        except Exception:
+            return {"error": "Impossible de charger le fichier complet pour l'analyse"}
+    df: pd.DataFrame = file_ref["df"]
     
     # Étape 1: Filtrer l'échantillon initial basé sur les variables restantes sélectionnées
     
