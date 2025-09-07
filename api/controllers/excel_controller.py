@@ -41,44 +41,52 @@ async def preview_excel(file):
     if not file.filename.endswith((".xls", ".xlsx")):
         return {"error": "Le fichier doit être un Excel (.xls ou .xlsx)"}
 
-    # 1) Sauvegarder le fichier de manière éphémère (lecture rapide, évite le parsing complet)
-    suffix = ".xlsx" if file.filename.endswith(".xlsx") else ".xls"
-    tmp_dir = tempfile.gettempdir()
-    tmp_path = os.path.join(tmp_dir, f"preview_{next(tempfile._get_candidate_names())}{suffix}")
-    with open(tmp_path, "wb") as out:
-        shutil.copyfileobj(file.file, out)
-
-    # 2) Lire un petit échantillon pour la preview (limite les coûts CPU/IO)
     try:
-        sample_df = _read_excel(tmp_path, nrows=1000)  # lecture rapide
-    except Exception:
-        # Fallback: tenter lecture sans nrows
-        sample_df = _read_excel(tmp_path)
+        # 1) Sauvegarder le fichier de manière éphémère (lecture rapide, évite le parsing complet)
+        suffix = ".xlsx" if file.filename.endswith(".xlsx") else ".xls"
+        tmp_dir = tempfile.gettempdir()
+        tmp_path = os.path.join(tmp_dir, f"preview_{next(tempfile._get_candidate_names())}{suffix}")
+        # s'assurer d'être au début du flux UploadFile
+        try:
+            file.file.seek(0)
+        except Exception:
+            pass
+        with open(tmp_path, "wb") as out:
+            shutil.copyfileobj(file.file, out)
 
-    sample_df = sample_df.replace([np.nan, np.inf, -np.inf], None)
+        # 2) Lire un petit échantillon pour la preview (limite les coûts CPU/IO)
+        try:
+            sample_df = _read_excel(tmp_path, nrows=1000)  # lecture rapide
+        except Exception:
+            # Fallback: tenter lecture sans nrows
+            sample_df = _read_excel(tmp_path)
 
-    # 3) Estimer le nombre total de lignes via openpyxl (rapide en read_only)
-    total_rows = None
-    try:
-        if tmp_path.lower().endswith('.xlsx'):
-            wb = load_workbook(tmp_path, read_only=True)
-            ws = wb.active
-            total_rows = max(0, (ws.max_row or 0) - 1)
-        else:
-            # Pour .xls, estimer via pandas (nombre de lignes de l'échantillon si inconnu)
+        sample_df = sample_df.replace([np.nan, np.inf, -np.inf], None)
+
+        # 3) Estimer le nombre total de lignes via openpyxl (rapide en read_only)
+        total_rows = None
+        try:
+            if tmp_path.lower().endswith('.xlsx'):
+                wb = load_workbook(tmp_path, read_only=True)
+                ws = wb.active
+                total_rows = max(0, (ws.max_row or 0) - 1)
+            else:
+                # Pour .xls, estimer via pandas
+                total_rows = int(len(sample_df))
+        except Exception:
             total_rows = int(len(sample_df))
-    except Exception:
-        total_rows = int(len(sample_df))
 
-    # 4) Enregistrer la référence au fichier (DF complet non chargé pour accélérer la preview)
-    uploaded_files[file.filename] = {"path": tmp_path, "df": None}
+        # 4) Enregistrer la référence au fichier (DF complet non chargé pour accélérer la preview)
+        uploaded_files[file.filename] = {"path": tmp_path, "df": None}
 
-    return {
-        "filename": file.filename,
-        "rows": int(total_rows),
-        "columns": sample_df.columns.tolist(),
-        "preview": sample_df.head(5).to_dict(orient="records")
-    }
+        return {
+            "filename": file.filename,
+            "rows": int(total_rows),
+            "columns": sample_df.columns.tolist(),
+            "preview": sample_df.head(5).to_dict(orient="records")
+        }
+    except Exception as e:
+        return {"error": f"Preview failed: {str(e)}"}
 
 async def select_columns(filename: str, variables_explicatives: List[str], variable_a_expliquer: List[str], selected_data: Dict = None):
     if filename not in uploaded_files:
