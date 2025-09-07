@@ -9,5 +9,5 @@ services:
     plan: free
     envVars:
       - key: BACKEND_ALLOWED_ORIGINS
-        value: https://your-vercel-domain.vercel.app
+        value: https://analyseur-de-donnees-5nrc.vercel.app
 
