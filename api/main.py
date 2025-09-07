@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routers import excel_router
+import os
 
 app = FastAPI(
     title="API Analyse Statistique",
@@ -8,10 +9,13 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Configuration CORS pour Next.js
+# Configuration CORS (pilotée par variable d'environnement)
+origins_env = os.getenv("BACKEND_ALLOWED_ORIGINS", "http://localhost:3000")
+allowed_origins = [o.strip() for o in origins_env.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Votre frontend Next.js
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
