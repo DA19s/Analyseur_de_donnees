@@ -6,6 +6,21 @@ import numpy as np
 import json
 from typing import Dict, List, Any, Optional, Tuple
 from openpyxl import load_workbook
+
+
+def _select_engine(path: str) -> str:
+    """Choose pandas engine based on extension."""
+    lower = path.lower()
+    if lower.endswith(".xls"):
+        # xlrd<2.0 supports .xls
+        return "xlrd"
+    # default for .xlsx
+    return "openpyxl"
+
+
+def _read_excel(path: str, nrows: Optional[int] = None, usecols: Optional[List[str]] = None) -> pd.DataFrame:
+    engine = _select_engine(path)
+    return pd.read_excel(path, nrows=nrows, usecols=usecols, engine=engine)
 from reportlab.lib.pagesizes import letter, A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -35,20 +50,23 @@ async def preview_excel(file):
 
     # 2) Lire un petit échantillon pour la preview (limite les coûts CPU/IO)
     try:
-        sample_df = pd.read_excel(tmp_path, nrows=1000)  # lecture rapide
+        sample_df = _read_excel(tmp_path, nrows=1000)  # lecture rapide
     except Exception:
         # Fallback: tenter lecture sans nrows
-        sample_df = pd.read_excel(tmp_path)
+        sample_df = _read_excel(tmp_path)
 
     sample_df = sample_df.replace([np.nan, np.inf, -np.inf], None)
 
     # 3) Estimer le nombre total de lignes via openpyxl (rapide en read_only)
     total_rows = None
     try:
-        wb = load_workbook(tmp_path, read_only=True)
-        ws = wb.active
-        # Soustraire la ligne d'en-tête si présente
-        total_rows = max(0, (ws.max_row or 0) - 1)
+        if tmp_path.lower().endswith('.xlsx'):
+            wb = load_workbook(tmp_path, read_only=True)
+            ws = wb.active
+            total_rows = max(0, (ws.max_row or 0) - 1)
+        else:
+            # Pour .xls, estimer via pandas (nombre de lignes de l'échantillon si inconnu)
+            total_rows = int(len(sample_df))
     except Exception:
         total_rows = int(len(sample_df))
 
@@ -70,7 +88,7 @@ async def select_columns(filename: str, variables_explicatives: List[str], varia
     file_ref = uploaded_files[filename]
     if file_ref.get("df") is None:
         try:
-            file_ref["df"] = pd.read_excel(file_ref["path"])  # charge complet
+            file_ref["df"] = _read_excel(file_ref["path"])  # charge complet
         except Exception:
             return {"error": "Impossible de charger le fichier complet pour l'analyse"}
     df: pd.DataFrame = file_ref["df"]
@@ -211,10 +229,10 @@ async def get_column_unique_values(filename: str, column_name: str):
     # Si le DF complet n'est pas chargé, lire uniquement la colonne demandée pour performance
     if df is None:
         try:
-            col_df = pd.read_excel(file_ref["path"], usecols=[column_name])
+            col_df = _read_excel(file_ref["path"], usecols=[column_name])
         except Exception:
             # Fallback: charger complet
-            col_df = pd.read_excel(file_ref["path"])  # peut être coûteux
+            col_df = _read_excel(file_ref["path"])  # peut être coûteux
         series = col_df[column_name]
     else:
         if column_name not in df.columns:
