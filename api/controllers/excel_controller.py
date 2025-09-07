@@ -1,7 +1,11 @@
+import os
+import shutil
+import tempfile
 import pandas as pd
 import numpy as np
 import json
 from typing import Dict, List, Any, Optional, Tuple
+from openpyxl import load_workbook
 from reportlab.lib.pagesizes import letter, A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -12,30 +16,64 @@ import io
 import base64
 # Imports matplotlib supprimés - les diagrammes sont maintenant générés côté frontend
 
-# Stockage temporaire en mémoire
-uploaded_files = {}
+# Stockage temporaire: référence au fichier et cache optionnel du DataFrame complet
+# Structure: {
+#   filename: { "path": str, "df": Optional[pd.DataFrame] }
+# }
+uploaded_files: Dict[str, Dict[str, Any]] = {}
 
 async def preview_excel(file):
     if not file.filename.endswith((".xls", ".xlsx")):
         return {"error": "Le fichier doit être un Excel (.xls ou .xlsx)"}
-    
-    df = pd.read_excel(file.file)
-    df = df.replace([np.nan, np.inf, -np.inf], None)
 
-    uploaded_files[file.filename] = df
+    # 1) Sauvegarder le fichier de manière éphémère (lecture rapide, évite le parsing complet)
+    suffix = ".xlsx" if file.filename.endswith(".xlsx") else ".xls"
+    tmp_dir = tempfile.gettempdir()
+    tmp_path = os.path.join(tmp_dir, f"preview_{next(tempfile._get_candidate_names())}{suffix}")
+    with open(tmp_path, "wb") as out:
+        shutil.copyfileobj(file.file, out)
+
+    # 2) Lire un petit échantillon pour la preview (limite les coûts CPU/IO)
+    try:
+        sample_df = pd.read_excel(tmp_path, nrows=1000)  # lecture rapide
+    except Exception:
+        # Fallback: tenter lecture sans nrows
+        sample_df = pd.read_excel(tmp_path)
+
+    sample_df = sample_df.replace([np.nan, np.inf, -np.inf], None)
+
+    # 3) Estimer le nombre total de lignes via openpyxl (rapide en read_only)
+    total_rows = None
+    try:
+        wb = load_workbook(tmp_path, read_only=True)
+        ws = wb.active
+        # Soustraire la ligne d'en-tête si présente
+        total_rows = max(0, (ws.max_row or 0) - 1)
+    except Exception:
+        total_rows = int(len(sample_df))
+
+    # 4) Enregistrer la référence au fichier (DF complet non chargé pour accélérer la preview)
+    uploaded_files[file.filename] = {"path": tmp_path, "df": None}
 
     return {
         "filename": file.filename,
-        "rows": int(len(df)),  # Convertir en int natif
-        "columns": df.columns.tolist(),
-        "preview": df.head(5).to_dict(orient="records")
+        "rows": int(total_rows),
+        "columns": sample_df.columns.tolist(),
+        "preview": sample_df.head(5).to_dict(orient="records")
     }
 
 async def select_columns(filename: str, variables_explicatives: List[str], variable_a_expliquer: List[str], selected_data: Dict = None):
     if filename not in uploaded_files:
         return {"error": "Fichier non trouvé. Faites d'abord /excel/preview."}
-    
-    df = uploaded_files[filename]
+
+    # Charger le DataFrame complet à la demande (une seule fois)
+    file_ref = uploaded_files[filename]
+    if file_ref.get("df") is None:
+        try:
+            file_ref["df"] = pd.read_excel(file_ref["path"])  # charge complet
+        except Exception:
+            return {"error": "Impossible de charger le fichier complet pour l'analyse"}
+    df: pd.DataFrame = file_ref["df"]
 
     # Vérifier que toutes les colonnes existent
     all_columns = variables_explicatives + variable_a_expliquer
@@ -167,14 +205,27 @@ async def select_columns(filename: str, variables_explicatives: List[str], varia
 async def get_column_unique_values(filename: str, column_name: str):
     if filename not in uploaded_files:
         return {"error": "Fichier non trouvé. Faites d'abord /excel/preview."}
-    
-    df = uploaded_files[filename]
+
+    file_ref = uploaded_files[filename]
+    df: Optional[pd.DataFrame] = file_ref.get("df")
+    # Si le DF complet n'est pas chargé, lire uniquement la colonne demandée pour performance
+    if df is None:
+        try:
+            col_df = pd.read_excel(file_ref["path"], usecols=[column_name])
+        except Exception:
+            # Fallback: charger complet
+            col_df = pd.read_excel(file_ref["path"])  # peut être coûteux
+        series = col_df[column_name]
+    else:
+        if column_name not in df.columns:
+            return {"error": f"La colonne '{column_name}' n'existe pas dans {filename}"}
+        series = df[column_name]
     
     if column_name not in df.columns:
         return {"error": f"La colonne '{column_name}' n'existe pas dans {filename}"}
     
     # Récupérer toutes les valeurs uniques de la colonne
-    unique_values = df[column_name].dropna().unique()
+    unique_values = series.dropna().unique()
     
     # Convertir en types Python natifs
     converted_values = []
