@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { X, Check, Loader2 } from "lucide-react"
 import { useRouter } from "next/navigation"
+import { apiFetch } from "@/lib/api"
 
 interface QuickEditModalProps {
   editType: 'toExplain' | 'explanatory' | 'sample'
@@ -92,7 +93,8 @@ export default function QuickEditModal({ editType, returnToPage, onClose }: Quic
         formData.append("filename", previewData.filename)
         formData.append("column_name", columnName)
 
-        const response = await fetch("http://localhost:8000/excel/get-column-values", {
+        const response = await apiFetch("/excel/get-column-values", {
+        const response = await apiFetch("/excel/get-column-values", {
           method: "POST",
           body: formData,
         })
@@ -151,7 +153,7 @@ export default function QuickEditModal({ editType, returnToPage, onClose }: Quic
         }))
       }
 
-      const response = await fetch("http://localhost:8000/excel/select-columns", {
+      const response = await apiFetch("/excel/select-columns", {
         method: "POST",
         body: formData,
       })

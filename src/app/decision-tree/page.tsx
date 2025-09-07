@@ -7,6 +7,7 @@ import { useEffect, useState } from "react"
 import StepProgress from "@/components/ui/step-progress"
 import DecisionTree from "@/components/ui/decision-tree"
 import QuickEditModal from "@/components/ui/quick-edit-modal"
+import { apiFetch } from "@/lib/api"
 
 interface DecisionTreeData {
   filename: string
@@ -116,7 +117,7 @@ export default function DecisionTreePage() {
       
       formData.append("selected_data", JSON.stringify(allSelectedData))
 
-      const response = await fetch("http://localhost:8000/excel/build-decision-tree", {
+      const response = await apiFetch("/excel/build-decision-tree", {
         method: "POST",
         body: formData,
       })

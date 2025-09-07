@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ArrowLeft, Home } from "lucide-react"
 import { useEffect, useState } from "react"
 import StepProgress from "@/components/ui/step-progress"
+import { apiFetch } from "@/lib/api"
 
 interface RemainingData {
   filename: string
@@ -85,7 +86,7 @@ export default function DataSelection() {
       formData.append("variable_a_expliquer", remainingData.variables_a_expliquer.join(','))
       formData.append("selected_data", JSON.stringify(selectedData))
 
-      const response = await fetch("http://localhost:8000/excel/select-columns", {
+      const response = await apiFetch("/excel/select-columns", {
         method: "POST",
         body: formData,
       })

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useRouter } from "next/navigation"
 import { ChevronDown, ChevronRight, Home } from "lucide-react"
+import { apiFetch, API_BASE_URL } from "@/lib/api"
 
 interface PreviewData {
   filename: string
@@ -236,7 +237,7 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
 
   const checkServerStatus = async () => {
     try {
-      const response = await fetch("http://localhost:8000/health", {
+      const response = await apiFetch("/health", {
         method: "GET",
         signal: AbortSignal.timeout(5000) // Timeout de 5 secondes
       })
@@ -261,7 +262,7 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
       const formData = new FormData()
       formData.append("file", file)
 
-      const response = await fetch("http://localhost:8000/excel/preview", {
+      const response = await apiFetch("/excel/preview", {
         method: "POST",
         body: formData,
       })
@@ -356,7 +357,7 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
 
 
 
-        const response = await fetch("http://localhost:8000/excel/get-column-values", {
+        const response = await apiFetch("/excel/get-column-values", {
           method: "POST",
           body: formData,
         })
@@ -422,7 +423,7 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
           formData.append("filename", previewData?.filename || '') // Use optional chaining
           formData.append("column_name", columnName)
 
-          const response = await fetch("http://localhost:8000/excel/get-column-values", {
+          const response = await apiFetch("/excel/get-column-values", {
             method: "POST",
             body: formData,
           })
@@ -590,7 +591,7 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
 
 
 
-      const response = await fetch("http://localhost:8000/excel/select-columns", {
+      const response = await apiFetch("/excel/select-columns", {
         method: "POST",
         body: formData,
       })
@@ -629,7 +630,7 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
 
 
 
-        const response = await fetch("http://localhost:8000/excel/select-columns", {
+        const response = await apiFetch("/excel/select-columns", {
           method: "POST",
           body: formData,
         })
