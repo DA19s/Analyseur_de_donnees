@@ -1,7 +1,6 @@
 "use client"
 
 import React, { useRef } from 'react'
-import jsPDF from 'jspdf'
 import DecisionTreeChart from './decision-tree-chart'
 
 interface TreeNode {
@@ -395,6 +394,7 @@ export default function PDFGenerator({
 
   const generatePDF = async () => {
     try {
+      const { default: jsPDF } = await import('jspdf')
       const pdf = new jsPDF('l', 'mm', 'a4')
       const pageWidth = pdf.internal.pageSize.getWidth()
       const pageHeight = pdf.internal.pageSize.getHeight()
