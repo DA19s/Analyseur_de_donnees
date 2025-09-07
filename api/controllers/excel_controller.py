@@ -80,8 +80,8 @@ async def preview_excel(file):
         # 4) Enregistrer la référence au fichier (DF complet non chargé pour accélérer la preview)
         uploaded_files[file.filename] = {"path": tmp_path, "df": None}
 
-    return {
-        "filename": file.filename,
+        return {
+            "filename": file.filename,
             "rows": int(total_rows),
             "columns": sample_df.columns.tolist(),
             "preview": sample_df.head(5).to_dict(orient="records")
