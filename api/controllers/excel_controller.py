@@ -5,6 +5,7 @@ import pandas as pd
 import numpy as np
 import json
 from typing import Dict, List, Any, Optional, Tuple
+from fastapi import HTTPException
 from openpyxl import load_workbook
 
 
@@ -39,7 +40,7 @@ uploaded_files: Dict[str, Dict[str, Any]] = {}
 
 async def preview_excel(file):
     if not file.filename.endswith((".xls", ".xlsx")):
-        return {"error": "Le fichier doit être un Excel (.xls ou .xlsx)"}
+        raise HTTPException(status_code=400, detail="Le fichier doit être un Excel (.xls ou .xlsx)")
 
     try:
         # 1) Sauvegarder le fichier de manière éphémère (lecture rapide, évite le parsing complet)
@@ -86,7 +87,8 @@ async def preview_excel(file):
             "preview": sample_df.head(5).to_dict(orient="records")
         }
     except Exception as e:
-        return {"error": f"Preview failed: {str(e)}"}
+        # Propage en 400 pour que le frontend n'utilise pas un payload d'erreur comme preview
+        raise HTTPException(status_code=400, detail=f"Preview failed: {str(e)}")
 
 async def select_columns(filename: str, variables_explicatives: List[str], variable_a_expliquer: List[str], selected_data: Dict = None):
     if filename not in uploaded_files:
