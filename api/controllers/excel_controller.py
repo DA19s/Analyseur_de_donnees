@@ -232,28 +232,38 @@ async def select_columns(filename: str, variables_explicatives: List[str], varia
 
 async def get_column_unique_values(filename: str, column_name: str):
     if filename not in uploaded_files:
-        return {"error": "Fichier non trouvé. Faites d'abord /excel/preview."}
+        raise HTTPException(status_code=400, detail="Fichier non trouvé. Faites d'abord /excel/preview.")
 
     file_ref = uploaded_files[filename]
     df: Optional[pd.DataFrame] = file_ref.get("df")
     # Si le DF complet n'est pas chargé, lire uniquement la colonne demandée pour performance
-    if df is None:
-        try:
-            col_df = _read_excel(file_ref["path"], usecols=[column_name])
-        except Exception:
-            # Fallback: charger complet
-            col_df = _read_excel(file_ref["path"])  # peut être coûteux
-        series = col_df[column_name]
-    else:
-        if column_name not in df.columns:
-            return {"error": f"La colonne '{column_name}' n'existe pas dans {filename}"}
-        series = df[column_name]
+    try:
+        if df is None:
+            try:
+                col_df = _read_excel(file_ref["path"], usecols=[column_name])
+            except Exception:
+                # Fallback: charger complet puis vérifier
+                col_df = _read_excel(file_ref["path"])  # peut être coûteux
+            if column_name not in col_df.columns:
+                raise HTTPException(status_code=400, detail=f"La colonne '{column_name}' n'existe pas dans {filename}")
+            series = col_df[column_name]
+        else:
+            if column_name not in df.columns:
+                raise HTTPException(status_code=400, detail=f"La colonne '{column_name}' n'existe pas dans {filename}")
+            series = df[column_name]
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Lecture colonne échouée: {str(e)}")
     
     if column_name not in df.columns:
         return {"error": f"La colonne '{column_name}' n'existe pas dans {filename}"}
     
     # Récupérer toutes les valeurs uniques de la colonne
-    unique_values = series.dropna().unique()
+    try:
+        unique_values = series.dropna().unique()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Extraction valeurs uniques échouée: {str(e)}")
     
     # Convertir en types Python natifs
     converted_values = []
