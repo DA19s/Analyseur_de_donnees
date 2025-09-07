@@ -10,4 +10,6 @@ services:
     envVars:
       - key: BACKEND_ALLOWED_ORIGINS
         value: https://analyseur-de-donnees-5nrc.vercel.app
+      - key: BACKEND_ALLOWED_ORIGIN_REGEX
+        value: ^https:\/\/.*\.vercel\.app$
 

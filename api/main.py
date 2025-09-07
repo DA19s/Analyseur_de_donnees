@@ -13,9 +13,13 @@ app = FastAPI(
 origins_env = os.getenv("BACKEND_ALLOWED_ORIGINS", "http://localhost:3000")
 allowed_origins = [o.strip() for o in origins_env.split(",") if o.strip()]
 
+# Optionnel: autoriser via regex (utile pour les URLs preview Vercel)
+origin_regex = os.getenv("BACKEND_ALLOWED_ORIGIN_REGEX")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
+    allow_origin_regex=origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
