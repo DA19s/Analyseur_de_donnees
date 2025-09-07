@@ -256,9 +256,6 @@ async def get_column_unique_values(filename: str, column_name: str):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Lecture colonne échouée: {str(e)}")
     
-    if column_name not in df.columns:
-        return {"error": f"La colonne '{column_name}' n'existe pas dans {filename}"}
-    
     # Récupérer toutes les valeurs uniques de la colonne
     try:
         unique_values = series.dropna().unique()
