@@ -46,12 +46,16 @@ function DataSelectionAccordion({
   columnName, 
   data, 
   selectedData, 
-  onDataSelection 
+  onDataSelection,
+  loading,
+  onExpand
 }: { 
   columnName: string
   data: any[]
   selectedData: any[]
   onDataSelection: (columnName: string, value: any, checked: boolean) => void
+  loading?: boolean
+  onExpand?: (columnName: string) => void
 }) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
@@ -61,7 +65,11 @@ function DataSelectionAccordion({
     <Card className="border-2">
       <CardHeader 
         className="cursor-pointer hover:bg-gray-50"
-        onClick={() => setIsExpanded(!isExpanded)}
+        onClick={() => {
+          const next = !isExpanded
+          setIsExpanded(next)
+          if (next && onExpand) onExpand(columnName)
+        }}
       >
         <div className="flex items-center justify-between">
           <div className="flex-1">
@@ -113,6 +121,13 @@ function DataSelectionAccordion({
       
       {isExpanded && (
         <CardContent>
+          {loading && data.length === 0 ? (
+            <div className="text-center py-4">
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto mb-2"></div>
+              <p className="text-sm text-gray-500">Chargement des valeurs...</p>
+            </div>
+          ) : (
+            <>
           {/* Barre de recherche pour les modalités */}
           <div className="mb-4">
             <div className="relative">
@@ -157,6 +172,8 @@ function DataSelectionAccordion({
               </label>
             ))}
           </div>
+            </>
+          )}
         </CardContent>
       )}
     </Card>
@@ -341,7 +358,7 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
     setSelectedRemainingData(prev => {
       const newSelection = { ...prev }
       
-      if (checked) {
+        if (checked) {
         // Ajouter la valeur
         if (!newSelection[columnName]) {
           newSelection[columnName] = []
@@ -1206,6 +1223,31 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
                   data={remainingData?.remaining_data[columnName] || []}
                   selectedData={selectedRemainingData[columnName] || []}
                   onDataSelection={handleDataSelection}
+                  loading={expandedColumns[columnName] && !columnValues[columnName]}
+                  onExpand={async (col) => {
+                    // lazy-load: si pas encore chargé, récupérer les valeurs via API
+                    if (!previewData) return
+                    if (!columnValues[col]) {
+                      try {
+                        const formData = new FormData()
+                        formData.append("filename", previewData.filename)
+                        formData.append("column_name", col)
+                        const response = await apiFetch("/excel/get-column-values", { method: "POST", body: formData })
+                        if (!response.ok) {
+                          return
+                        }
+                        const result = await response.json()
+                        setColumnValues(prev => ({ ...prev, [col]: result.unique_values }))
+                        // Injecter dans remainingData pour rester compatible avec le rendu actuel
+                        setRemainingData(prev => prev ? ({
+                          ...prev,
+                          remaining_data: { ...prev.remaining_data, [col]: result.unique_values }
+                        }) : prev)
+                      } catch {}
+                    }
+                    // Marquer l'expansion
+                    setExpandedColumns(prev => ({ ...prev, [col]: true }))
+                  }}
                 />
               ))}
           </div>
