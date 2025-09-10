@@ -89,11 +89,25 @@ async def preview_excel(file):
         except Exception:
             total_rows = int(len(sample_df))
 
-        # 4) Enregistrer la référence au fichier (DF complet non chargé pour accélérer la preview)
-        uploaded_files[file.filename] = {"path": tmp_path, "df": None}
+        # 4) Conversion automatique .xls -> .xlsx (pour accélérer les lectures suivantes)
+        path_to_store = tmp_path
+        try:
+            if file.filename.lower().endswith('.xls'):
+                # Lire une fois le fichier complet (équivalent à ce qui sera fait plus tard)
+                convert_df = _read_excel(tmp_path)
+                converted_path = os.path.join(tempfile.gettempdir(), f"converted_{next(tempfile._get_candidate_names())}.xlsx")
+                # Sauvegarder en .xlsx (openpyxl)
+                convert_df.to_excel(converted_path, index=False)
+                path_to_store = converted_path
+        except Exception:
+            # En cas d'échec, on garde le chemin original
+            path_to_store = tmp_path
 
-        return {
-            "filename": file.filename,
+        # Enregistrer la référence au fichier (DF complet non chargé pour accélérer la preview)
+        uploaded_files[file.filename] = {"path": path_to_store, "df": None}
+
+    return {
+        "filename": file.filename,
             "rows": int(total_rows),
             "columns": sample_df.columns.tolist(),
             "preview": sample_df.head(5).to_dict(orient="records")
