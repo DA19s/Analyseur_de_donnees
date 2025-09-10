@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo, useCallback } from "react"
 import { useFile } from "@/app/context/FileContext"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -31,6 +31,16 @@ interface RemainingData {
   message: string
 }
 
+// Petit hook de debounce (invisible pour l'UI)
+function useDebouncedValue<T>(value: T, delayMs: number): T {
+  const [debounced, setDebounced] = useState(value)
+  useEffect(() => {
+    const id = setTimeout(() => setDebounced(value), delayMs)
+    return () => clearTimeout(id)
+  }, [value, delayMs])
+  return debounced
+}
+
 // Composant accordéon pour la sélection des données
 function DataSelectionAccordion({ 
   columnName, 
@@ -45,6 +55,7 @@ function DataSelectionAccordion({
 }) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
+  const debouncedSearch = useDebouncedValue(searchTerm, 300)
 
   return (
     <Card className="border-2">
@@ -121,7 +132,7 @@ function DataSelectionAccordion({
             {searchTerm && (
               <p className="text-sm text-gray-500 mt-1">
                 {data.filter((value: any) => 
-                  String(value).toLowerCase().includes(searchTerm.toLowerCase())
+                  String(value).toLowerCase().includes(debouncedSearch.toLowerCase())
                 ).length} modalité(s) trouvée(s) sur {data.length}
               </p>
             )}
@@ -130,10 +141,10 @@ function DataSelectionAccordion({
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
             {data
               .filter((value: any) => 
-                !searchTerm || String(value).toLowerCase().includes(searchTerm.toLowerCase())
+                !debouncedSearch || String(value).toLowerCase().includes(debouncedSearch.toLowerCase())
               )
               .map((value, index) => (
-              <label key={index} className="flex items-center space-x-2 p-2 border rounded hover:bg-gray-50 cursor-pointer">
+              <label key={`${columnName}-${index}`} className="flex items-center space-x-2 p-2 border rounded hover:bg-gray-50 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={selectedData.includes(value)}
@@ -171,6 +182,10 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
   const [columnSearchTerm, setColumnSearchTerm] = useState('')
   const [explanatorySearchTerm, setExplanatorySearchTerm] = useState('')
   const [dataSearchTerm, setDataSearchTerm] = useState('')
+
+  const debouncedColumnSearch = useDebouncedValue(columnSearchTerm, 300)
+  const debouncedExplanatorySearch = useDebouncedValue(explanatorySearchTerm, 300)
+  const debouncedDataSearch = useDebouncedValue(dataSearchTerm, 300)
   
   // Nouveaux states pour gérer l'affichage des valeurs des colonnes
   const [expandedColumns, setExpandedColumns] = useState<{ [columnName: string]: boolean }>({})
@@ -218,22 +233,32 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
     })
   }, [selectedColumnValues])
 
-  // Filtrer les colonnes pour les variables à expliquer
-  const filteredToExplainColumns = previewData?.columns.filter(column =>
-    column.toLowerCase().includes(columnSearchTerm.toLowerCase()) &&
-    !columnSelection[column]?.isExplanatory // Exclure les variables déjà explicatives
-  ) || []
+  // Filtrer les colonnes pour les variables à expliquer (mémo + debounce)
+  const filteredToExplainColumns = useMemo(() => {
+    const cols = previewData?.columns || []
+    const term = debouncedColumnSearch.toLowerCase()
+    return cols.filter(column =>
+      column.toLowerCase().includes(term) &&
+      !columnSelection[column]?.isExplanatory
+    )
+  }, [previewData?.columns, debouncedColumnSearch, columnSelection])
 
-  // Filtrer les colonnes pour les variables explicatives
-  const filteredExplanatoryColumns = previewData?.columns.filter(column =>
-    column.toLowerCase().includes(explanatorySearchTerm.toLowerCase()) &&
-    !columnSelection[column]?.isToExplain // Exclure les variables déjà à expliquer
-  ) || []
+  // Filtrer les colonnes pour les variables explicatives (mémo + debounce)
+  const filteredExplanatoryColumns = useMemo(() => {
+    const cols = previewData?.columns || []
+    const term = debouncedExplanatorySearch.toLowerCase()
+    return cols.filter(column =>
+      column.toLowerCase().includes(term) &&
+      !columnSelection[column]?.isToExplain
+    )
+  }, [previewData?.columns, debouncedExplanatorySearch, columnSelection])
 
-  // Filtrer les colonnes restantes basé sur la recherche
-  const filteredRemainingColumns = remainingData?.remaining_columns?.filter(column =>
-    column.toLowerCase().includes(dataSearchTerm.toLowerCase())
-  ) || []
+  // Filtrer les colonnes restantes basé sur la recherche (mémo + debounce)
+  const filteredRemainingColumns = useMemo(() => {
+    const cols = remainingData?.remaining_columns || []
+    const term = debouncedDataSearch.toLowerCase()
+    return cols.filter(column => column.toLowerCase().includes(term))
+  }, [remainingData?.remaining_columns, debouncedDataSearch])
 
   const checkServerStatus = async () => {
     try {
@@ -342,7 +367,7 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
   }
 
   // Nouvelle fonction pour gérer l'expansion des colonnes
-  const handleColumnExpansion = async (columnName: string) => {
+  const handleColumnExpansion = useCallback(async (columnName: string) => {
     if (!previewData) return
 
     const isExpanded = expandedColumns[columnName]
@@ -391,10 +416,10 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
     }))
     
 
-  }
+  }, [previewData, expandedColumns, columnValues])
 
   // Fonction pour gérer la sélection de la checkbox "Variable à expliquer"
-  const handleVariableToExplainCheckbox = async (columnName: string, checked: boolean) => {
+  const handleVariableToExplainCheckbox = useCallback(async (columnName: string, checked: boolean) => {
     // Mettre à jour columnSelection pour exclure cette variable des variables explicatives
     setColumnSelection(prev => {
       const newSelection = { ...prev }
@@ -465,7 +490,7 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
         return newSelection
       })
     }
-  }
+  }, [columnValues, previewData])
 
   // Fonction pour gérer la sélection des valeurs individuelles
   // Fonction pour gérer le retour en arrière avec notification de la page parent
@@ -482,7 +507,7 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
     }
   }
 
-  const handleColumnValueSelection = (columnName: string, value: any, checked: boolean) => {
+  const handleColumnValueSelection = useCallback((columnName: string, value: any, checked: boolean) => {
     setSelectedColumnValues(prev => {
       const newSelection = { ...prev }
       
@@ -529,7 +554,7 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
       
       return newSelection
     })
-  }
+  }, [])
 
   const handleSubmit = async () => {
     if (!previewData) return

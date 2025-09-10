@@ -38,6 +38,17 @@ import base64
 # }
 uploaded_files: Dict[str, Dict[str, Any]] = {}
 
+# Cache simple en mémoire pour les valeurs uniques par (fichier, colonne)
+# Structure: {
+#   filename: {
+#     "uniques_cache": {
+#        column_name: { "values": List[Any], "ts": float }
+#     }
+#   }
+# }
+from time import time
+_UNIQUES_TTL_SECONDS = 15 * 60  # 15 minutes
+
 async def preview_excel(file):
     if not file.filename.endswith((".xls", ".xlsx")):
         raise HTTPException(status_code=400, detail="Le fichier doit être un Excel (.xls ou .xlsx)")
@@ -235,6 +246,20 @@ async def get_column_unique_values(filename: str, column_name: str):
         raise HTTPException(status_code=400, detail="Fichier non trouvé. Faites d'abord /excel/preview.")
 
     file_ref = uploaded_files[filename]
+    # Vérifier le cache
+    try:
+        uniques_cache = file_ref.setdefault("uniques_cache", {})
+        cached = uniques_cache.get(column_name)
+        if cached and (time() - cached.get("ts", 0) <= _UNIQUES_TTL_SECONDS):
+            return {
+                "filename": str(filename),
+                "column_name": str(column_name),
+                "unique_values": cached["values"],
+                "total_unique_values": len(cached["values"])
+            }
+    except Exception:
+        # En cas de souci avec le cache, continuer sans casser la réponse
+        pass
     df: Optional[pd.DataFrame] = file_ref.get("df")
     # Si le DF complet n'est pas chargé, lire uniquement la colonne demandée pour performance
     try:
@@ -271,7 +296,15 @@ async def get_column_unique_values(filename: str, column_name: str):
             converted_values.append(float(val) if isinstance(val, np.floating) else int(val))
         else:
             converted_values.append(str(val))
-    
+    # Mettre en cache
+    try:
+        file_ref.setdefault("uniques_cache", {})[column_name] = {
+            "values": converted_values,
+            "ts": time(),
+        }
+    except Exception:
+        pass
+
     return {
         "filename": str(filename),
         "column_name": str(column_name),
