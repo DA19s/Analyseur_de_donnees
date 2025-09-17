@@ -11,6 +11,7 @@ from typing import Dict, List, Any, Optional, Tuple
 
 from fastapi import HTTPException
 from openpyxl import load_workbook
+import xlrd
 
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
@@ -70,48 +71,56 @@ async def preview_excel(file):
         with open(tmp_path, "wb") as out:
             shutil.copyfileobj(file.file, out)
 
-        # 2) Lecture rapide d'un échantillon
-        try:
-            sample_df = _read_excel(tmp_path, nrows=1000)
-        except Exception:
-            sample_df = _read_excel(tmp_path)
+        # 2) Lecture ultra-rapide sans Pandas
+        columns: List[str] = []
+        preview_records: List[Dict[str, Any]] = []
+        total_rows: int = 0
 
-        sample_df = sample_df.replace([np.nan, np.inf, -np.inf], None)
+        if tmp_path.lower().endswith('.xlsx'):
+            wb = load_workbook(tmp_path, read_only=True, data_only=True)
+            ws = wb.active
+            total_rows = max(0, (ws.max_row or 0) - 1)
+            # En-têtes
+            header_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), None)
+            columns = [str(c) if c is not None else f"Col_{i+1}" for i, c in enumerate(header_row or [])]
+            # Premières lignes
+            data_iter = ws.iter_rows(min_row=2, max_row=min(ws.max_row, 6), values_only=True)
+            for row in data_iter:
+                rec: Dict[str, Any] = {}
+                for i, val in enumerate(row or []):
+                    name = columns[i] if i < len(columns) else f"Col_{i+1}"
+                    if isinstance(val, float) and (np.isnan(val) or np.isinf(val)):
+                        rec[name] = None
+                    else:
+                        rec[name] = val
+                preview_records.append(rec)
+        else:
+            # .xls via xlrd (rapide)
+            book = xlrd.open_workbook(tmp_path)
+            sheet = book.sheet_by_index(0)
+            total_rows = max(0, sheet.nrows - 1)
+            # En-têtes
+            columns = [str(x) if x is not None else f"Col_{i+1}" for i, x in enumerate(sheet.row_values(0))]
+            # Premières lignes
+            for r in range(1, min(sheet.nrows, 6)):
+                row_vals = sheet.row_values(r)
+                rec: Dict[str, Any] = {}
+                for i, val in enumerate(row_vals):
+                    name = columns[i] if i < len(columns) else f"Col_{i+1}"
+                    if isinstance(val, float) and (np.isnan(val) or np.isinf(val)):
+                        rec[name] = None
+                    else:
+                        rec[name] = val
+                preview_records.append(rec)
 
-        # 3) Estimation des lignes totales
-        try:
-            if tmp_path.lower().endswith(".xlsx"):
-                wb = load_workbook(tmp_path, read_only=True)
-                ws = wb.active
-                total_rows = max(0, (ws.max_row or 0) - 1)
-            else:
-                total_rows = int(len(sample_df))
-        except Exception:
-            total_rows = int(len(sample_df))
-
-        # 4) Conversion facultative .xls -> .xlsx (éviter timeouts sur gros .xls)
-        path_to_store = tmp_path
-        try:
-            if file.filename.lower().endswith('.xls'):
-                size_mb = max(0.0, os.path.getsize(tmp_path) / 1_000_000.0)
-                if size_mb <= 12.0:
-                    convert_df = _read_excel(tmp_path)
-                    converted_path = os.path.join(
-                        tempfile.gettempdir(), f"converted_{next(tempfile._get_candidate_names())}.xlsx"
-                    )
-                    convert_df.to_excel(converted_path, index=False)
-                    path_to_store = converted_path
-        except Exception:
-            path_to_store = tmp_path
-
-        # 5) Mémorisation du fichier (DF complet non chargé ici)
-        uploaded_files[file.filename] = {"path": path_to_store, "df": None, "uniques_cache": {}}
+        # 3) Mémorisation du fichier (DF complet non chargé ici)
+        uploaded_files[file.filename] = {"path": tmp_path, "df": None, "uniques_cache": {}}
 
         return {
             "filename": file.filename,
             "rows": int(total_rows),
-            "columns": sample_df.columns.tolist(),
-            "preview": sample_df.head(5).to_dict(orient="records"),
+            "columns": columns,
+            "preview": preview_records,
         }
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Preview failed: {str(e)}")
