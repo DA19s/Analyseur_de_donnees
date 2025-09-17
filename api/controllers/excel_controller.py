@@ -1,3 +1,6 @@
+import os
+import tempfile
+import shutil
 import pandas as pd
 import numpy as np
 import json
@@ -15,21 +18,51 @@ import base64
 # Stockage temporaire en mémoire
 uploaded_files = {}
 
+from openpyxl import load_workbook
+
 async def preview_excel(file):
     if not file.filename.endswith((".xls", ".xlsx")):
         return {"error": "Le fichier doit être un Excel (.xls ou .xlsx)"}
     
-    df = pd.read_excel(file.file)
-    df = df.replace([np.nan, np.inf, -np.inf], None)
+    # Sauvegarder l'upload en fichier temporaire pour évaluer la taille et convertir si besoin
+    try:
+        suffix = ".xlsx" if file.filename.lower().endswith('.xlsx') else ".xls"
+        tmp_dir = tempfile.gettempdir()
+        tmp_path = os.path.join(tmp_dir, f"preview_{next(tempfile._get_candidate_names())}{suffix}")
+        try:
+            file.file.seek(0)
+        except Exception:
+            pass
+        with open(tmp_path, "wb") as out:
+            shutil.copyfileobj(file.file, out)
 
-    uploaded_files[file.filename] = df
+        path_to_read = tmp_path
+        # Conversion .xls -> .xlsx si taille raisonnable (seuil augmenté à 30 Mo)
+        if file.filename.lower().endswith('.xls'):
+            try:
+                size_mb = max(0.0, os.path.getsize(tmp_path) / 1_000_000.0)
+                if size_mb <= 30.0:
+                    xls_df = pd.read_excel(tmp_path)
+                    converted_path = os.path.join(tempfile.gettempdir(), f"converted_{next(tempfile._get_candidate_names())}.xlsx")
+                    xls_df.to_excel(converted_path, index=False)
+                    path_to_read = converted_path
+            except Exception:
+                path_to_read = tmp_path
 
-    return {
-        "filename": file.filename,
-        "rows": int(len(df)),  # Convertir en int natif
-        "columns": df.columns.tolist(),
-        "preview": df.head(5).to_dict(orient="records")
-    }
+        # Lecture du DataFrame
+        df = pd.read_excel(path_to_read)
+        df = df.replace([np.nan, np.inf, -np.inf], None)
+
+        uploaded_files[file.filename] = df
+
+        return {
+            "filename": file.filename,
+            "rows": int(len(df)),
+            "columns": df.columns.tolist(),
+            "preview": df.head(5).to_dict(orient="records")
+        }
+    except Exception as e:
+        return {"error": f"Preview failed: {str(e)}"}
 
 async def select_columns(filename: str, variables_explicatives: List[str], variable_a_expliquer: List[str], selected_data: Dict = None):
     if filename not in uploaded_files:
