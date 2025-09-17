@@ -83,14 +83,24 @@ async def build_decision_tree_endpoint(
             return {"error": "Format invalide pour selected_data"}
         
         # Construire l'arbre de décision avec PDF
-        result = await excel_controller.build_decision_tree_with_pdf(
-            filename,
-            variables_explicatives_list,
-            variables_a_expliquer_list,
-            selected_data_dict,
-            min_population_threshold,
-            treatment_mode
-        )
+        try:
+            # Nouvelle signature (6 arguments)
+            result = await excel_controller.build_decision_tree_with_pdf(
+                filename,
+                variables_explicatives_list,
+                variables_a_expliquer_list,
+                selected_data_dict,
+                min_population_threshold,
+                treatment_mode,
+            )
+        except TypeError:
+            # Compatibilité ancienne signature (4 arguments)
+            result = await excel_controller.build_decision_tree_with_pdf(
+                filename,
+                variables_explicatives_list,
+                variables_a_expliquer_list,
+                selected_data_dict,
+            )
         
         return result
         
