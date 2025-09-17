@@ -341,56 +341,42 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
     })
   }
 
-  // Nouvelle fonction pour gérer l'expansion des colonnes
+  // Nouvelle fonction pour gérer l'expansion des colonnes (affiche un spinner si chargement)
   const handleColumnExpansion = async (columnName: string) => {
     if (!previewData) return
 
     const isExpanded = expandedColumns[columnName]
-    
-    if (!isExpanded && !columnValues[columnName]) {
-      // Charger les valeurs de la colonne depuis l'API
-      try {
 
-        const formData = new FormData()
-        formData.append("filename", previewData.filename)
-        formData.append("column_name", columnName)
+    if (!isExpanded) {
+      // Ouvrir tout de suite pour afficher le loader si les valeurs ne sont pas encore là
+      setExpandedColumns(prev => ({ ...prev, [columnName]: true }))
+      if (!columnValues[columnName]) {
+        try {
+          const formData = new FormData()
+          formData.append("filename", previewData.filename)
+          formData.append("column_name", columnName)
 
+          const response = await apiFetch("/excel/get-column-values", {
+            method: "POST",
+            body: formData,
+          })
 
+          if (!response.ok) {
+            const errorText = await response.text()
+            throw new Error(`Erreur HTTP: ${response.status} - ${errorText}`)
+          }
 
-        const response = await apiFetch("/excel/get-column-values", {
-          method: "POST",
-          body: formData,
-        })
-
-        if (!response.ok) {
-          const errorText = await response.text()
-
-          throw new Error(`Erreur HTTP: ${response.status} - ${errorText}`)
+          const result = await response.json()
+          setColumnValues(prev => ({ ...prev, [columnName]: result.unique_values }))
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "Erreur lors du chargement des valeurs")
+          return
         }
-
-        const result = await response.json()
-
-        
-        setColumnValues(prev => ({
-          ...prev,
-          [columnName]: result.unique_values
-        }))
-        
-
-      } catch (err) {
-
-        setError(err instanceof Error ? err.message : "Erreur lors du chargement des valeurs")
-        return
       }
+    } else {
+      // Replier
+      setExpandedColumns(prev => ({ ...prev, [columnName]: false }))
     }
-
-    // Basculer l'état d'expansion
-    setExpandedColumns(prev => ({
-      ...prev,
-      [columnName]: !isExpanded
-    }))
-    
-
   }
 
   // Fonction pour gérer la sélection de la checkbox "Variable à expliquer"
