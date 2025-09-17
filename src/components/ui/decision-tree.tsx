@@ -28,6 +28,11 @@ interface DecisionTreeProps {
   pdfBase64?: string
   pdfGenerated?: boolean
   minPopulationThreshold?: number
+  // Props restaurées
+  variablesToExplain?: string[]
+  selectedColumnValues?: { [columnName: string]: any[] }
+  basePopulation?: number
+  treatmentMode?: 'independent' | 'together'
 }
 
 // Interface pour les feuilles finales filtrées
@@ -39,7 +44,7 @@ interface FilteredLeaf {
   targetValue: string
 }
 
-export default function DecisionTree({ decisionTrees, filename, pdfBase64, pdfGenerated, minPopulationThreshold }: DecisionTreeProps) {
+export default function DecisionTree({ decisionTrees, filename, pdfBase64, pdfGenerated, minPopulationThreshold, variablesToExplain, selectedColumnValues, basePopulation, treatmentMode }: DecisionTreeProps) {
   const [expandedNodes, setExpandedNodes] = useState<{ [key: string]: boolean }>({})
   const [expandedTrees, setExpandedTrees] = useState<{ [key: string]: boolean }>({})
   const [minPercentage, setMinPercentage] = useState<string>('')
@@ -450,8 +455,11 @@ export default function DecisionTree({ decisionTrees, filename, pdfBase64, pdfGe
             <div className="space-y-6">
               {Object.entries(targetTrees).map(([targetValue, tree]) => (
                 <div key={targetValue} className="border-l-4 border-green-300 pl-4">
-                  <h4 className="text-lg font-semibold text-green-700 mb-3">
-                    📊 Valeur: {targetValue}
+                  <h4 className="text-lg font-semibold text-green-700 mb-3 flex items-baseline gap-3">
+                    <span>📊 Valeur: {targetValue}</span>
+                    {typeof basePopulation === 'number' && basePopulation > 0 && (
+                      <span className="text-lg text-gray-700">— {basePopulation} lignes</span>
+                    )}
                   </h4>
                   <div className="bg-gray-50 p-4 rounded-lg">
                     {renderTreeNode(tree, 0, `${targetVar}-${targetValue}`)}

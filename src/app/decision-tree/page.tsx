@@ -6,6 +6,7 @@ import { ArrowLeft, Home, TreePine, Loader2 } from "lucide-react"
 import { useEffect, useState } from "react"
 import StepProgress from "@/components/ui/step-progress"
 import DecisionTree from "@/components/ui/decision-tree"
+import PDFGenerator from "@/components/ui/pdf-generator"
 import QuickEditModal from "@/components/ui/quick-edit-modal"
 import { apiFetch } from "@/lib/api"
 
@@ -410,7 +411,23 @@ export default function DecisionTreePage() {
               pdfBase64={decisionTreeData.pdf_base64}
               pdfGenerated={decisionTreeData.pdf_generated}
               minPopulationThreshold={minPopulationThreshold}
+              variablesToExplain={decisionTreeData.variables_a_expliquer}
+              selectedColumnValues={selectedColumnValues}
+              basePopulation={decisionTreeData.filtered_sample_size || decisionTreeData.original_sample_size}
+              treatmentMode={treatmentMode}
             />
+          )}
+
+          {decisionTreeData && !buildingTree && (
+            <div className="mt-6">
+              <PDFGenerator
+                decisionTrees={decisionTreeData.decision_trees}
+                filename={decisionTreeData.filename}
+                variablesToExplain={decisionTreeData.variables_a_expliquer}
+                selectedColumnValues={selectedColumnValues}
+                treatmentMode={treatmentMode}
+              />
+            </div>
           )}
 
           {/* Message si aucun arbre */}
