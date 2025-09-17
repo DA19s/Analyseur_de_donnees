@@ -6,7 +6,6 @@ import { ArrowLeft, Home, TreePine, Loader2 } from "lucide-react"
 import { useEffect, useState } from "react"
 import StepProgress from "@/components/ui/step-progress"
 import DecisionTree from "@/components/ui/decision-tree"
-import PDFGenerator from "@/components/ui/pdf-generator"
 import QuickEditModal from "@/components/ui/quick-edit-modal"
 import { apiFetch } from "@/lib/api"
 
@@ -43,8 +42,9 @@ export default function DecisionTreePage() {
     
     if (storedData) {
       try {
-    const data = JSON.parse(storedData)
+        const data = JSON.parse(storedData)
 
+        
         // Si l'arbre est déjà construit, l'afficher
         if (data.decisionTreeData) {
           setDecisionTreeData(data.decisionTreeData)
@@ -82,7 +82,7 @@ export default function DecisionTreePage() {
     if (!storedData) return
 
     const data = JSON.parse(storedData)
-    const { analysisResult, filename } = data
+    const { analysisResult, filename, selectedColumnValues } = data
 
     if (!analysisResult || !filename) return
 
@@ -97,16 +97,22 @@ export default function DecisionTreePage() {
       formData.append("variable_a_expliquer", analysisResult.variables_a_expliquer.join(','))
       formData.append("min_population_threshold", minPopulationThreshold.toString())
       
-      // Utiliser le mode de traitement courant (state)
+      // Récupérer le mode de traitement depuis localStorage
+      const treatmentMode = localStorage.getItem('treatmentMode') || 'independent'
       formData.append("treatment_mode", treatmentMode)
       
-      // Récupérer les modalités des variables restantes depuis les données stockées
-      const selectedRemainingData = data.selectedRemainingData || {}
+      // Récupérer les modalités des variables restantes depuis le localStorage
+      const storedData = localStorage.getItem('excelAnalysisData')
+      let selectedRemainingData = {}
+      if (storedData) {
+        const parsedData = JSON.parse(storedData)
+        selectedRemainingData = parsedData.selectedRemainingData || {}
+      }
       
       // Inclure les données sélectionnées des variables restantes ET des variables à expliquer
       const allSelectedData = {
         ...selectedRemainingData,  // ✅ Modalités des variables restantes
-        ...selectedColumnValues    // ✅ Valeurs des variables à expliquer (state courant)
+        ...selectedColumnValues    // ✅ Valeurs des variables à expliquer
       }
       
       formData.append("selected_data", JSON.stringify(allSelectedData))
@@ -416,18 +422,6 @@ export default function DecisionTreePage() {
               basePopulation={decisionTreeData.filtered_sample_size || decisionTreeData.original_sample_size}
               treatmentMode={treatmentMode}
             />
-          )}
-
-          {decisionTreeData && !buildingTree && (
-            <div className="mt-6">
-              <PDFGenerator
-                decisionTrees={decisionTreeData.decision_trees}
-                filename={decisionTreeData.filename}
-                variablesToExplain={decisionTreeData.variables_a_expliquer}
-                selectedColumnValues={selectedColumnValues}
-                treatmentMode={treatmentMode}
-              />
-            </div>
           )}
 
           {/* Message si aucun arbre */}

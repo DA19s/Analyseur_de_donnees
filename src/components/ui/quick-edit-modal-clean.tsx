@@ -94,6 +94,7 @@ export default function QuickEditModal({ editType, returnToPage, onClose }: Quic
         formData.append("column_name", columnName)
 
         const response = await apiFetch("/excel/get-column-values", {
+        const response = await apiFetch("/excel/get-column-values", {
           method: "POST",
           body: formData,
         })
