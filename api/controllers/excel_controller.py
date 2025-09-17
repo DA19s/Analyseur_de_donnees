@@ -90,15 +90,21 @@ async def preview_excel(file):
             total_rows = int(len(sample_df))
 
         # 4) Conversion automatique .xls -> .xlsx (pour accélérer les lectures suivantes)
+        #    ATTENTION: la conversion lit le fichier en entier. Pour éviter les timeouts
+        #    sur de très gros fichiers, on l'active seulement sous un certain seuil.
         path_to_store = tmp_path
         try:
             if file.filename.lower().endswith('.xls'):
-                # Lire une fois le fichier complet (équivalent à ce qui sera fait plus tard)
-                convert_df = _read_excel(tmp_path)
-                converted_path = os.path.join(tempfile.gettempdir(), f"converted_{next(tempfile._get_candidate_names())}.xlsx")
-                # Sauvegarder en .xlsx (openpyxl)
-                convert_df.to_excel(converted_path, index=False)
-                path_to_store = converted_path
+                file_size_mb = max(0.0, os.path.getsize(tmp_path) / 1_000_000.0)
+                # Convertir uniquement les .xls raisonnables (<= 12 Mo), sinon conserver .xls
+                if file_size_mb <= 12.0:
+                    convert_df = _read_excel(tmp_path)
+                    converted_path = os.path.join(tempfile.gettempdir(), f"converted_{next(tempfile._get_candidate_names())}.xlsx")
+                    convert_df.to_excel(converted_path, index=False)
+                    path_to_store = converted_path
+                else:
+                    # Trop volumineux: pas de conversion pendant la preview
+                    path_to_store = tmp_path
         except Exception:
             # En cas d'échec, on garde le chemin original
             path_to_store = tmp_path
