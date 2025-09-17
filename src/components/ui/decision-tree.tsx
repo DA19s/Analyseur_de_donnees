@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { ChevronDown, ChevronRight, Download, TreePine, Filter, TrendingUp } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import PDFGenerator from "@/components/ui/pdf-generator"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 
 
@@ -180,26 +181,7 @@ export default function DecisionTree({ decisionTrees, filename, pdfBase64, pdfGe
     setShowFilteredResults(false)
   }
 
-  const downloadPDF = () => {
-    if (pdfBase64) {
-      const byteCharacters = atob(pdfBase64)
-      const byteNumbers = new Array(byteCharacters.length)
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i)
-      }
-      const byteArray = new Uint8Array(byteNumbers)
-      const blob = new Blob([byteArray], { type: 'application/pdf' })
-      
-      const url = window.URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `arbre_decision_${filename.replace('.xlsx', '').replace('.xls', '')}.pdf`
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      window.URL.revokeObjectURL(url)
-    }
-  }
+  // Ancien téléchargement PDF (backend) retiré au profit du nouveau générateur côté client
 
   const renderTreeNode = (node: TreeNode, level: number = 0, nodeKey: string = '') => {
     const indent = level * 40
@@ -488,40 +470,19 @@ export default function DecisionTree({ decisionTrees, filename, pdfBase64, pdfGe
             </p>
           </div>
         </div>
-        
-        {pdfGenerated && pdfBase64 && (
-          <Button 
-            onClick={downloadPDF}
-            className="bg-green-600 hover:bg-green-700 text-white"
-          >
-            <Download className="h-4 w-4 mr-2" />
-            Télécharger PDF
-          </Button>
-        )}
+        {/* Nouveau bouton de génération PDF côté client (à la place de l'ancien) */}
+        <div className="ml-4">
+          <PDFGenerator
+            decisionTrees={decisionTrees}
+            filename={filename}
+            variablesToExplain={variablesToExplain || []}
+            selectedColumnValues={selectedColumnValues || {}}
+            treatmentMode={treatmentMode || 'independent'}
+          />
+        </div>
       </div>
 
-      {/* Indicateur de statut PDF */}
-      {pdfGenerated !== undefined && (
-        <div className={`p-3 rounded-lg ${
-          pdfGenerated 
-            ? 'bg-green-100 border border-green-300 text-green-800' 
-            : 'bg-red-100 border border-red-300 text-red-800'
-        }`}>
-          <div className="flex items-center">
-            {pdfGenerated ? (
-              <>
-                <span className="text-green-600 mr-2">✅</span>
-                <span>PDF généré avec succès - Disponible au téléchargement</span>
-              </>
-            ) : (
-              <>
-                <span className="text-red-600 mr-2">❌</span>
-                <span>Erreur lors de la génération du PDF</span>
-              </>
-            )}
-          </div>
-        </div>
-      )}
+      {/* Indicateur backend de PDF retiré (on génère désormais côté client) */}
 
       {/* Arbres de décision */}
       <div className="space-y-4">
