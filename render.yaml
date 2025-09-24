@@ -4,7 +4,8 @@ services:
     env: python
     rootDir: api
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    startCommand: gunicorn -k uvicorn.workers.UvicornWorker -w 1 -b 0.0.0.0:$PORT main:app --timeout 100
+    healthCheckPath: /health
     autoDeploy: true
     plan: free
     envVars:
