@@ -1,6 +1,5 @@
 export const API_BASE_URL: string =
-  (typeof process !== "undefined" && process.env.NEXT_PUBLIC_API_URL) ||
-  "http://localhost:8000";
+  (process.env.NEXT_PUBLIC_API_URL as string | undefined) ?? "http://localhost:8000";
 
 function joinUrl(base: string, path: string): string {
   const normalizedBase = base.endsWith("/") ? base.slice(0, -1) : base;
