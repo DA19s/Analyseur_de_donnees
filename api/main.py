@@ -30,7 +30,7 @@ app.add_middleware(
 async def root():
     return {"message": "API Analyse Statistique - Prêt !"}
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 async def health_check():
     return {"status": "healthy"}
 
