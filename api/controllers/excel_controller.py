@@ -13,6 +13,8 @@ from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 import io
 import base64
+import time
+from openpyxl import load_workbook
 
 # Stockage temporaire en mémoire
 uploaded_files = {}
@@ -223,16 +225,100 @@ async def get_column_unique_values(filename: str, column_name: str, search: Opti
         # Lecture ciblée uniquement de la colonne depuis le disque
         path = file_ref.get("path")
         try:
-            # Optimisation: lire par chunks quand possible pour éviter gros chargements mémoire
             engine = _select_engine(path)
-            # openpyxl/xlrd ne supportent pas chunksize, fallback lecture entière si indisponible
-            if engine is None:
-                col_df = pd.read_excel(path, usecols=[column_name])
-                if column_name not in col_df.columns:
+            if engine == 'openpyxl' and path.lower().endswith('.xlsx'):
+                # Ultra-light streaming lecture avec openpyxl en mode read_only
+                wb = load_workbook(path, read_only=True, data_only=True)
+                ws = wb[wb.sheetnames[0]]
+
+                # Trouver l'index de la colonne via l'entête déjà connue
+                header_columns = file_ref.get("columns", [])
+                try:
+                    col_idx_zero_based = header_columns.index(column_name)
+                except ValueError:
                     return {"error": f"La colonne '{column_name}' n'existe pas dans {filename}"}
-                series = col_df[column_name]
+                col_idx = col_idx_zero_based + 1  # openpyxl est 1-based
+
+                # Itérer sur les valeurs de la colonne (à partir de la ligne 2 pour ignorer l'entête)
+                seen_overall = set()
+                collected = []
+                filtered_seen = set()
+                need = (offset or 0) + (limit or 200)
+                search_lower = (search or "").lower()
+
+                # Flag pour savoir si on a plus de résultats
+                has_more_flag = False
+
+                start_time = time.perf_counter()
+                max_seconds = 6.0  # budget temps pour éviter timeouts plateformes gratuites
+                skipped = 0
+                for row in ws.iter_rows(min_row=2, min_col=col_idx, max_col=col_idx, values_only=True):
+                    # Stop si on a un budget temps dépassé mais déjà des résultats
+                    if (time.perf_counter() - start_time) > max_seconds and len(collected) > 0:
+                        has_more_flag = True
+                        break
+                    cell_value = row[0]
+                    # Normalisation similaire au chemin pandas
+                    if cell_value is None:
+                        normalized = None
+                        display = ""
+                    elif isinstance(cell_value, (int, float, np.integer, np.floating)):
+                        # Convertir floats numpy vs natifs
+                        if isinstance(cell_value, float) and cell_value.is_integer():
+                            normalized = int(cell_value)
+                        else:
+                            normalized = float(cell_value) if isinstance(cell_value, (float, np.floating)) else int(cell_value)
+                        display = str(normalized)
+                    elif isinstance(cell_value, bool):
+                        normalized = str(cell_value)
+                        display = normalized
+                    else:
+                        normalized = str(cell_value)
+                        display = normalized
+
+                    # Unicité globale
+                    key = display if normalized is not None else ""
+                    if key in seen_overall:
+                        continue
+                    seen_overall.add(key)
+
+                    # Filtre de recherche
+                    if search_lower:
+                        if display.lower().find(search_lower) == -1:
+                            continue
+
+                    # Unicité dans le set filtré
+                    if key in filtered_seen:
+                        continue
+                    filtered_seen.add(key)
+
+                    # Gérer offset
+                    if skipped < (offset or 0):
+                        skipped += 1
+                        continue
+
+                    # Ajouter jusqu'à limit
+                    collected.append(normalized)
+                    if len(collected) >= (limit or 200):
+                        # On a ce qu'il faut; vérifier s'il reste potentiellement plus
+                        has_more_flag = True
+                        break
+
+                wb.close()
+
+                # Retourner rapidement sans construire toute la liste d'unicité
+                return {
+                    "filename": str(filename),
+                    "column_name": str(column_name),
+                    "unique_values": collected,
+                    "total_unique_values": -1,  # inconnu (non utilisé côté front)
+                    "filtered_total_unique_values": (offset or 0) + len(collected) + (1 if has_more_flag else 0),
+                    "offset": int(offset or 0),
+                    "limit": int(limit or 200),
+                    "has_more": has_more_flag
+                }
             else:
-                # Lecture entière mais limitée à une seule colonne (réduction coûts IO)
+                # Fallback: pandas lecture d'une seule colonne
                 col_df = pd.read_excel(path, usecols=[column_name], engine=engine)
                 if column_name not in col_df.columns:
                     return {"error": f"La colonne '{column_name}' n'existe pas dans {filename}"}
