@@ -16,6 +16,7 @@ import base64
 
 # Stockage temporaire en mémoire
 uploaded_files = {}
+_UNIQUES_TTL_SECONDS = 15 * 60  # 15 minutes
 
 # Helpers pour lecture légère et sélection d'engines
 def _select_engine(path: str) -> Optional[str]:
@@ -50,7 +51,8 @@ async def preview_excel(file):
     uploaded_files[file.filename] = {
         "path": tmp_path,
         "df": None,  # chargé plus tard si nécessaire
-        "columns": sample_df.columns.tolist()
+        "columns": sample_df.columns.tolist(),
+        "uniques_cache": {}
     }
 
     return {
@@ -195,11 +197,22 @@ async def select_columns(filename: str, variables_explicatives: List[str], varia
         }
     }
 
-async def get_column_unique_values(filename: str, column_name: str):
+async def get_column_unique_values(filename: str, column_name: str, search: Optional[str] = None, offset: int = 0, limit: int = 200):
     if filename not in uploaded_files:
         return {"error": "Fichier non trouvé. Faites d'abord /excel/preview."}
     
     file_ref = uploaded_files[filename]
+    # Cache des uniques par colonne
+    if isinstance(file_ref, dict):
+        cache = file_ref.setdefault("uniques_cache", {})
+        cached = cache.get(column_name)
+        if cached and (pd.Timestamp.now().timestamp() - cached.get("ts", 0) <= _UNIQUES_TTL_SECONDS):
+            return {
+                "filename": str(filename),
+                "column_name": str(column_name),
+                "unique_values": cached["values"],
+                "total_unique_values": len(cached["values"])
+            }
     # Si nous avons un DataFrame entier (ancien comportement)
     if isinstance(file_ref, pd.DataFrame):
         df = file_ref
@@ -217,25 +230,47 @@ async def get_column_unique_values(filename: str, column_name: str):
             return {"error": f"La colonne '{column_name}' n'existe pas dans {filename}"}
         series = col_df[column_name]
 
-    # Récupérer toutes les valeurs uniques de la colonne
-    unique_values = series.dropna().unique()
-    
-    # Convertir en types Python natifs
-    converted_values = []
-    for val in unique_values:
+    # Récupérer toutes les valeurs uniques de la colonne (base)
+    base_unique_values = series.dropna().unique()
+
+    # Convertir en types Python natifs (base)
+    base_converted_values = []
+    for val in base_unique_values:
         if pd.isna(val):
-            converted_values.append(None)
+            base_converted_values.append(None)
         elif isinstance(val, (np.integer, np.floating)):
-            converted_values.append(float(val) if isinstance(val, np.floating) else int(val))
+            base_converted_values.append(float(val) if isinstance(val, np.floating) else int(val))
         else:
-            converted_values.append(str(val))
-    
-    return {
+            base_converted_values.append(str(val))
+
+    # Filtrage (search)
+    if search:
+        search_lower = search.lower()
+        filtered_values = [v for v in base_converted_values if ("" if v is None else str(v)).lower().find(search_lower) != -1]
+    else:
+        filtered_values = base_converted_values
+
+    total_filtered = len(filtered_values)
+    start = max(0, int(offset))
+    end = max(start, start + int(limit)) if limit is not None else total_filtered
+    paged_values = filtered_values[start:end]
+
+    result = {
         "filename": str(filename),
         "column_name": str(column_name),
-        "unique_values": converted_values,
-        "total_unique_values": len(converted_values)
+        "unique_values": paged_values,
+        "total_unique_values": len(base_converted_values),
+        "filtered_total_unique_values": total_filtered,
+        "offset": start,
+        "limit": int(limit),
+        "has_more": end < total_filtered
     }
+
+    # Mettre en cache la base complète (non filtrée)
+    if isinstance(file_ref, dict):
+        cache[column_name] = {"values": base_converted_values, "ts": pd.Timestamp.now().timestamp()}
+
+    return result
 
 # ============================================================================
 # NOUVELLES FONCTIONS POUR L'ARBRE DE DÉCISION

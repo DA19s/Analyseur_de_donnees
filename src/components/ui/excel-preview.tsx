@@ -2,11 +2,11 @@
 
 import { useState, useEffect } from "react"
 import { useFile } from "@/app/context/FileContext"
+import { apiFetch } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useRouter } from "next/navigation"
 import { ChevronDown, ChevronRight, Home } from "lucide-react"
-import { apiFetch, API_BASE_URL } from "@/lib/api"
 
 interface PreviewData {
   filename: string
@@ -341,42 +341,60 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
     })
   }
 
-  // Nouvelle fonction pour gérer l'expansion des colonnes (affiche un spinner si chargement)
+  // Nouvelle fonction pour gérer l'expansion des colonnes
   const handleColumnExpansion = async (columnName: string) => {
     if (!previewData) return
 
     const isExpanded = expandedColumns[columnName]
+    
+    if (!isExpanded && !columnValues[columnName]) {
+      // Charger les valeurs de la colonne depuis l'API
+      try {
 
-    if (!isExpanded) {
-      // Ouvrir tout de suite pour afficher le loader si les valeurs ne sont pas encore là
-      setExpandedColumns(prev => ({ ...prev, [columnName]: true }))
-      if (!columnValues[columnName]) {
-        try {
-          const formData = new FormData()
-          formData.append("filename", previewData.filename)
-          formData.append("column_name", columnName)
+        const formData = new FormData()
+        formData.append("filename", previewData.filename)
+        formData.append("column_name", columnName)
 
-          const response = await apiFetch("/excel/get-column-values", {
-            method: "POST",
-            body: formData,
-          })
 
-          if (!response.ok) {
-            const errorText = await response.text()
-            throw new Error(`Erreur HTTP: ${response.status} - ${errorText}`)
-          }
 
-          const result = await response.json()
-          setColumnValues(prev => ({ ...prev, [columnName]: result.unique_values }))
-        } catch (err) {
-          setError(err instanceof Error ? err.message : "Erreur lors du chargement des valeurs")
-          return
+        formData.append("search", dataSearchTerm || "")
+        formData.append("offset", "0")
+        formData.append("limit", "200")
+
+        const response = await apiFetch("/excel/get-column-values", {
+          method: "POST",
+          body: formData,
+        })
+
+        if (!response.ok) {
+          const errorText = await response.text()
+
+          throw new Error(`Erreur HTTP: ${response.status} - ${errorText}`)
         }
+
+        const result = await response.json()
+
+        
+        setColumnValues(prev => ({
+          ...prev,
+          [columnName]: result.unique_values
+        }))
+        
+
+      } catch (err) {
+
+        setError(err instanceof Error ? err.message : "Erreur lors du chargement des valeurs")
+        return
       }
-    } else {
-      // Replier
-      setExpandedColumns(prev => ({ ...prev, [columnName]: false }))
     }
+
+    // Basculer l'état d'expansion
+    setExpandedColumns(prev => ({
+      ...prev,
+      [columnName]: !isExpanded
+    }))
+    
+
   }
 
   // Fonction pour gérer la sélection de la checkbox "Variable à expliquer"
@@ -408,6 +426,10 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
           const formData = new FormData()
           formData.append("filename", previewData?.filename || '') // Use optional chaining
           formData.append("column_name", columnName)
+
+          formData.append("search", "")
+          formData.append("offset", "0")
+          formData.append("limit", "1000000")
 
           const response = await apiFetch("/excel/get-column-values", {
             method: "POST",
@@ -693,7 +715,7 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
       <div className="text-center p-8">
         <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
           <strong>❌ Serveur inaccessible</strong>
-          <p className="mt-2">Le serveur backend n'est pas accessible sur http://localhost:8000</p>
+          <p className="mt-2">Le serveur backend n'est pas accessible</p>
           <p className="text-sm">Vérifiez que votre serveur FastAPI est démarré</p>
         </div>
         <Button onClick={checkServerStatus} className="bg-blue-600 hover:bg-blue-700">
