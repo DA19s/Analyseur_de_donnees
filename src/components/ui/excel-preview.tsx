@@ -177,6 +177,8 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
   const [columnValues, setColumnValues] = useState<{ [columnName: string]: any[] }>({})
   const [selectedColumnValues, setSelectedColumnValues] = useState<{ [columnName: string]: any[] }>({})
   const [loadingColumnValues, setLoadingColumnValues] = useState<{ [columnName: string]: boolean }>({})
+  const [columnLoadErrors, setColumnLoadErrors] = useState<{ [columnName: string]: string | null }>({})
+  const [columnPageInfo, setColumnPageInfo] = useState<{ [columnName: string]: { offset: number, limit: number, hasMore: boolean, loadingMore?: boolean } }>({})
   
   // État pour le mode de traitement des variables à expliquer
   const [treatmentMode, setTreatmentMode] = useState<'independent' | 'together'>('independent')
@@ -371,9 +373,7 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
 
         const response = await apiFetch("/excel/get-column-values", {
           method: "POST",
-          body: formData,
-          // Timeout to surface slow network/timeouts instead of opaque "Failed to fetch"
-          signal: AbortSignal.timeout(15000)
+          body: formData
         })
 
         if (!response.ok) {
@@ -388,7 +388,16 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
           ...prev,
           [columnName]: result.unique_values
         }))
+        setColumnPageInfo(prev => ({
+          ...prev,
+          [columnName]: {
+            offset: (result.offset ?? 0) + (Array.isArray(result.unique_values) ? result.unique_values.length : 0),
+            limit: result.limit ?? 100,
+            hasMore: !!result.has_more,
+          }
+        }))
         setLoadingColumnValues(prev => ({ ...prev, [columnName]: false }))
+        setColumnLoadErrors(prev => ({ ...prev, [columnName]: null }))
         // Préparer pagination si besoin
         if (result.has_more) {
           // stocker un marqueur simple pour un "Charger plus" ultérieur (implémentable si nécessaire)
@@ -397,7 +406,8 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
 
       } catch (err) {
 
-        setError(err instanceof Error ? err.message : "Erreur lors du chargement des valeurs")
+        const message = err instanceof Error ? err.message : "Erreur lors du chargement des valeurs"
+        setColumnLoadErrors(prev => ({ ...prev, [columnName]: message }))
         setLoadingColumnValues(prev => ({ ...prev, [columnName]: false }))
         return
       }
@@ -451,8 +461,7 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
 
           const response = await apiFetch("/excel/get-column-values", {
             method: "POST",
-            body: formData,
-            signal: AbortSignal.timeout(20000)
+            body: formData
           })
 
           if (!response.ok) {
@@ -936,28 +945,92 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
                             <p className="text-sm text-gray-500">Chargement des valeurs...</p>
                           </div>
                         ) : columnValues[column] ? (
-                          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2 max-h-64 overflow-y-auto">
-                            {columnValues[column]
-                              .filter((value: any) => 
-                                !dataSearchTerm || String(value).toLowerCase().includes(dataSearchTerm.toLowerCase())
-                              )
-                              .map((value, valueIndex) => (
-                              <label key={valueIndex} className="flex items-center space-x-2 p-2 border rounded hover:bg-gray-50 cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  checked={selectedColumnValues[column]?.includes(value) || false}
-                                  onChange={(e) => 
-                                    handleColumnValueSelection(column, value, e.target.checked)
-                                  }
-                                  className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
-                                />
-                                <span className="text-sm truncate" title={String(value)}>
-                                  {String(value)}
-                                </span>
-                              </label>
-                            ))}
-                          </div>
-                        ) : null}
+                          <>
+                            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2 max-h-64 overflow-y-auto">
+                              {columnValues[column]
+                                .filter((value: any) => 
+                                  !dataSearchTerm || String(value).toLowerCase().includes(dataSearchTerm.toLowerCase())
+                                )
+                                .map((value, valueIndex) => (
+                                <label key={valueIndex} className="flex items-center space-x-2 p-2 border rounded hover:bg-gray-50 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedColumnValues[column]?.includes(value) || false}
+                                    onChange={(e) => 
+                                      handleColumnValueSelection(column, value, e.target.checked)
+                                    }
+                                    className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
+                                  />
+                                  <span className="text-sm truncate" title={String(value)}>
+                                    {String(value)}
+                                  </span>
+                                </label>
+                              ))}
+                            </div>
+                            {/* Charger plus */}
+                            {columnPageInfo[column]?.hasMore && (
+                              <div className="mt-3 text-center">
+                                <Button
+                                  disabled={columnPageInfo[column]?.loadingMore}
+                                  onClick={async () => {
+                                    try {
+                                      setColumnPageInfo(prev => ({ ...prev, [column]: { ...(prev[column] || { offset: columnValues[column]?.length || 0, limit: 100, hasMore: true }), loadingMore: true } }))
+                                      const pi = columnPageInfo[column] || { offset: columnValues[column]?.length || 0, limit: 100, hasMore: true }
+                                      const formData = new FormData()
+                                      formData.append("filename", previewData.filename)
+                                      formData.append("column_name", column)
+                                      formData.append("search", dataSearchTerm || "")
+                                      formData.append("offset", String(pi.offset || (columnValues[column]?.length || 0)))
+                                      formData.append("limit", String(pi.limit || 100))
+
+                                      const response = await apiFetch("/excel/get-column-values", { method: "POST", body: formData })
+                                      if (!response.ok) {
+                                        const errorText = await response.text()
+                                        throw new Error(`Erreur HTTP: ${response.status} - ${errorText}`)
+                                      }
+                                      const res = await response.json()
+                                      setColumnValues(prev => {
+                                        const existing = prev[column] || []
+                                        const existingSet = new Set(existing.map(v => String(v)))
+                                        const toAppend = (res.unique_values || []).filter((v: any) => !existingSet.has(String(v)))
+                                        return { ...prev, [column]: [...existing, ...toAppend] }
+                                      })
+                                      setColumnPageInfo(prev => ({
+                                        ...prev,
+                                        [column]: {
+                                          offset: (res.offset ?? 0) + ((res.unique_values || []).length),
+                                          limit: res.limit ?? (pi.limit || 100),
+                                          hasMore: !!res.has_more,
+                                          loadingMore: false
+                                        }
+                                      }))
+                                    } catch (e) {
+                                      setColumnPageInfo(prev => ({ ...prev, [column]: { ...(prev[column] || { offset: 0, limit: 100, hasMore: true }), loadingMore: false } }))
+                                      setColumnLoadErrors(prev => ({ ...prev, [column]: e instanceof Error ? e.message : "Erreur lors du chargement supplémentaire" }))
+                                    }
+                                  }}
+                                  className="bg-green-600 hover:bg-green-700"
+                                >
+                                  {columnPageInfo[column]?.loadingMore ? "Chargement..." : "Charger plus"}
+                                </Button>
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          // Erreur spécifique à la colonne
+                          columnLoadErrors[column] ? (
+                            <div className="text-center py-4">
+                              <div className="bg-red-100 border border-red-300 text-red-700 px-3 py-2 rounded inline-block">
+                                {columnLoadErrors[column]}
+                              </div>
+                              <div className="mt-3">
+                                <Button onClick={() => handleColumnExpansion(column)} className="bg-green-600 hover:bg-green-700">
+                                  Réessayer
+                                </Button>
+                              </div>
+                            </div>
+                          ) : null
+                        )}
                         
                         {/* Résumé de la sélection */}
                         {selectedColumnValues[column] && selectedColumnValues[column].length > 0 && (
