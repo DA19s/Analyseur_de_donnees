@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useFile } from "@/app/context/FileContext"
 import { apiFetch } from "@/lib/api"
 import { Button } from "@/components/ui/button"
@@ -277,6 +277,8 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
   const [loadingColumnValues, setLoadingColumnValues] = useState<{ [columnName: string]: boolean }>({})
   const [columnLoadErrors, setColumnLoadErrors] = useState<{ [columnName: string]: string | null }>({})
   const [columnPageInfo, setColumnPageInfo] = useState<{ [columnName: string]: { offset: number, limit: number, hasMore: boolean, loadingMore?: boolean } }>({})
+  const preloadingStartedRef = useRef<boolean>(false)
+  const unmountedRef = useRef<boolean>(false)
   
   // État pour le mode de traitement des variables à expliquer
   const [treatmentMode, setTreatmentMode] = useState<'independent' | 'together'>('independent')
@@ -318,6 +320,65 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
       return newSelection
     })
   }, [selectedColumnValues])
+
+  useEffect(() => {
+    return () => { unmountedRef.current = true }
+  }, [])
+
+  // Préchargement en arrière-plan des modalités (limit 100) pour toutes les colonnes dès l'aperçu
+  useEffect(() => {
+    if (!previewData || preloadingStartedRef.current) return
+    preloadingStartedRef.current = true
+
+    const columns = (previewData.columns || []).slice()
+    let nextIndex = 0
+    let active = 0
+    const maxConcurrent = 2
+
+    const runWorker = async () => {
+      while (nextIndex < columns.length) {
+        const column = columns[nextIndex++]
+        if (unmountedRef.current) return
+        if (columnValues[column]) {
+          continue
+        }
+        try {
+          const formData = new FormData()
+          formData.append("filename", previewData.filename)
+          formData.append("column_name", column)
+          formData.append("search", "")
+          formData.append("offset", "0")
+          formData.append("limit", "100")
+
+          const response = await apiFetch("/excel/get-column-values", { method: "POST", body: formData })
+          if (!response.ok) {
+            // ignorer en arrière-plan
+            continue
+          }
+          const res = await response.json()
+          if (unmountedRef.current) return
+          if (res && Array.isArray(res.unique_values) && res.unique_values.length > 0) {
+            setColumnValues(prev => ({ ...prev, [column]: res.unique_values }))
+            setColumnPageInfo(prev => ({
+              ...prev,
+              [column]: {
+                offset: (res.offset ?? 0) + res.unique_values.length,
+                limit: res.limit ?? 100,
+                hasMore: !!res.has_more
+              }
+            }))
+          }
+        } catch {
+          // silencieux pour le préchargement
+        }
+      }
+    }
+
+    for (let i = 0; i < maxConcurrent; i++) {
+      active++
+      runWorker().finally(() => { active-- })
+    }
+  }, [previewData])
 
   // Filtrer les colonnes pour les variables à expliquer
   const filteredToExplainColumns = previewData?.columns.filter(column =>
