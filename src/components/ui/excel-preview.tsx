@@ -1,12 +1,12 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useFile } from "@/app/context/FileContext"
+import { apiFetch } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useRouter } from "next/navigation"
 import { ChevronDown, ChevronRight, Home } from "lucide-react"
-import { apiFetch, API_BASE_URL } from "@/lib/api"
 
 interface PreviewData {
   filename: string
@@ -36,21 +36,76 @@ function DataSelectionAccordion({
   columnName, 
   data, 
   selectedData, 
-  onDataSelection 
+  onDataSelection,
+  filename
 }: { 
   columnName: string
   data: any[]
   selectedData: any[]
-  onDataSelection: (columnName: string, value: any, checked: boolean) => void
+  onDataSelection: (columnName: string, value: any, checked: boolean) => void,
+  filename: string
 }) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
+  const [values, setValues] = useState<any[]>(data || [])
+  const [loading, setLoading] = useState<boolean>(false)
+  const [error, setError] = useState<string | null>(null)
+  const [pageInfo, setPageInfo] = useState<{ offset: number, limit: number, hasMore: boolean, loadingMore?: boolean }>({ offset: (data || []).length, limit: 100, hasMore: false })
+
+  // Synchroniser si le parent fournit des données pré-chargées
+  useEffect(() => {
+    if (Array.isArray(data) && data.length > 0) {
+      setValues(data)
+      setPageInfo(prev => ({ ...prev, offset: data.length, hasMore: false }))
+    }
+  }, [data])
+
+  const fetchValues = async (offset: number, limit: number) => {
+    const formData = new FormData()
+    formData.append("filename", filename)
+    formData.append("column_name", columnName)
+    formData.append("search", "")
+    formData.append("offset", String(offset))
+    formData.append("limit", String(limit))
+
+    const response = await apiFetch("/excel/get-column-values", { method: "POST", body: formData })
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`Erreur HTTP: ${response.status} - ${errorText}`)
+    }
+    const json = await response.json()
+    if (json && json.error) {
+      throw new Error(json.error)
+    }
+    return json
+  }
 
   return (
     <Card className="border-2">
       <CardHeader 
         className="cursor-pointer hover:bg-gray-50"
-        onClick={() => setIsExpanded(!isExpanded)}
+        onClick={async () => {
+          const willExpand = !isExpanded
+          setIsExpanded(willExpand)
+          if (willExpand && values.length === 0 && !loading) {
+            try {
+              setLoading(true)
+              setError(null)
+              const res = await fetchValues(0, 100)
+              setValues(res.unique_values || [])
+              setPageInfo({
+                offset: (res.offset ?? 0) + ((res.unique_values || []).length),
+                limit: res.limit ?? 100,
+                hasMore: !!res.has_more,
+                loadingMore: false
+              })
+            } catch (e) {
+              setError(e instanceof Error ? e.message : "Erreur lors du chargement des valeurs")
+            } finally {
+              setLoading(false)
+            }
+          }
+        }}
       >
         <div className="flex items-center justify-between">
           <div className="flex-1">
@@ -68,12 +123,12 @@ function DataSelectionAccordion({
             <div className="flex items-center space-x-2">
               <input
                 type="checkbox"
-                checked={selectedData.length === data.length && data.length > 0}
+                checked={selectedData.length === values.length && values.length > 0}
                 onChange={(e) => {
                   e.stopPropagation()
                   if (e.target.checked) {
                     // Cocher toutes les modalités
-                    data.forEach(value => {
+                    values.forEach(value => {
                       if (!selectedData.includes(value)) {
                         onDataSelection(columnName, value, true)
                       }
@@ -120,15 +175,26 @@ function DataSelectionAccordion({
             </div>
             {searchTerm && (
               <p className="text-sm text-gray-500 mt-1">
-                {data.filter((value: any) => 
+                {values.filter((value: any) => 
                   String(value).toLowerCase().includes(searchTerm.toLowerCase())
-                ).length} modalité(s) trouvée(s) sur {data.length}
+                ).length} modalité(s) trouvée(s) sur {values.length}
               </p>
             )}
           </div>
           
+          {loading && values.length === 0 ? (
+            <div className="text-center py-4">
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto mb-2"></div>
+              <p className="text-sm text-gray-500">Chargement des valeurs...</p>
+            </div>
+          ) : error ? (
+            <div className="text-center py-4">
+              <div className="bg-red-100 border border-red-300 text-red-700 px-3 py-2 rounded inline-block">{error}</div>
+            </div>
+          ) : (
+          <>
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
-            {data
+            {values
               .filter((value: any) => 
                 !searchTerm || String(value).toLowerCase().includes(searchTerm.toLowerCase())
               )
@@ -146,6 +212,38 @@ function DataSelectionAccordion({
               </label>
             ))}
           </div>
+          {pageInfo.hasMore && (
+            <div className="mt-3 text-center">
+              <Button
+                disabled={pageInfo.loadingMore}
+                onClick={async () => {
+                  try {
+                    setPageInfo(prev => ({ ...prev, loadingMore: true }))
+                    const res = await fetchValues(pageInfo.offset || values.length, pageInfo.limit || 100)
+                    setValues(prev => {
+                      const existingSet = new Set(prev.map(v => String(v)))
+                      const toAppend = (res.unique_values || []).filter((v: any) => !existingSet.has(String(v)))
+                      return [...prev, ...toAppend]
+                    })
+                    setPageInfo({
+                      offset: (res.offset ?? 0) + ((res.unique_values || []).length),
+                      limit: res.limit ?? (pageInfo.limit || 100),
+                      hasMore: !!res.has_more,
+                      loadingMore: false
+                    })
+                  } catch (e) {
+                    setError(e instanceof Error ? e.message : "Erreur lors du chargement supplémentaire")
+                    setPageInfo(prev => ({ ...prev, loadingMore: false }))
+                  }
+                }}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                {pageInfo.loadingMore ? "Chargement..." : "Charger plus"}
+              </Button>
+            </div>
+          )}
+          </>
+          )}
         </CardContent>
       )}
     </Card>
@@ -176,6 +274,11 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
   const [expandedColumns, setExpandedColumns] = useState<{ [columnName: string]: boolean }>({})
   const [columnValues, setColumnValues] = useState<{ [columnName: string]: any[] }>({})
   const [selectedColumnValues, setSelectedColumnValues] = useState<{ [columnName: string]: any[] }>({})
+  const [loadingColumnValues, setLoadingColumnValues] = useState<{ [columnName: string]: boolean }>({})
+  const [columnLoadErrors, setColumnLoadErrors] = useState<{ [columnName: string]: string | null }>({})
+  const [columnPageInfo, setColumnPageInfo] = useState<{ [columnName: string]: { offset: number, limit: number, hasMore: boolean, loadingMore?: boolean } }>({})
+  const preloadingStartedRef = useRef<boolean>(false)
+  const unmountedRef = useRef<boolean>(false)
   
   // État pour le mode de traitement des variables à expliquer
   const [treatmentMode, setTreatmentMode] = useState<'independent' | 'together'>('independent')
@@ -217,6 +320,65 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
       return newSelection
     })
   }, [selectedColumnValues])
+
+  useEffect(() => {
+    return () => { unmountedRef.current = true }
+  }, [])
+
+  // Préchargement en arrière-plan des modalités (limit 100) pour toutes les colonnes dès l'aperçu
+  useEffect(() => {
+    if (!previewData || preloadingStartedRef.current) return
+    preloadingStartedRef.current = true
+
+    const columns = (previewData.columns || []).slice()
+    let nextIndex = 0
+    let active = 0
+    const maxConcurrent = 2
+
+    const runWorker = async () => {
+      while (nextIndex < columns.length) {
+        const column = columns[nextIndex++]
+        if (unmountedRef.current) return
+        if (columnValues[column]) {
+          continue
+        }
+        try {
+          const formData = new FormData()
+          formData.append("filename", previewData.filename)
+          formData.append("column_name", column)
+          formData.append("search", "")
+          formData.append("offset", "0")
+          formData.append("limit", "100")
+
+          const response = await apiFetch("/excel/get-column-values", { method: "POST", body: formData })
+          if (!response.ok) {
+            // ignorer en arrière-plan
+            continue
+          }
+          const res = await response.json()
+          if (unmountedRef.current) return
+          if (res && Array.isArray(res.unique_values) && res.unique_values.length > 0) {
+            setColumnValues(prev => ({ ...prev, [column]: res.unique_values }))
+            setColumnPageInfo(prev => ({
+              ...prev,
+              [column]: {
+                offset: (res.offset ?? 0) + res.unique_values.length,
+                limit: res.limit ?? 100,
+                hasMore: !!res.has_more
+              }
+            }))
+          }
+        } catch {
+          // silencieux pour le préchargement
+        }
+      }
+    }
+
+    for (let i = 0; i < maxConcurrent; i++) {
+      active++
+      runWorker().finally(() => { active-- })
+    }
+  }, [previewData])
 
   // Filtrer les colonnes pour les variables à expliquer
   const filteredToExplainColumns = previewData?.columns.filter(column =>
@@ -341,42 +503,84 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
     })
   }
 
-  // Nouvelle fonction pour gérer l'expansion des colonnes (affiche un spinner si chargement)
+  // Nouvelle fonction pour gérer l'expansion des colonnes
   const handleColumnExpansion = async (columnName: string) => {
     if (!previewData) return
 
     const isExpanded = expandedColumns[columnName]
-
+    
+    // Ouvrir immédiatement pour montrer le spinner
     if (!isExpanded) {
-      // Ouvrir tout de suite pour afficher le loader si les valeurs ne sont pas encore là
       setExpandedColumns(prev => ({ ...prev, [columnName]: true }))
-      if (!columnValues[columnName]) {
-        try {
-          const formData = new FormData()
-          formData.append("filename", previewData.filename)
-          formData.append("column_name", columnName)
-
-          const response = await apiFetch("/excel/get-column-values", {
-            method: "POST",
-            body: formData,
-          })
-
-          if (!response.ok) {
-            const errorText = await response.text()
-            throw new Error(`Erreur HTTP: ${response.status} - ${errorText}`)
-          }
-
-          const result = await response.json()
-          setColumnValues(prev => ({ ...prev, [columnName]: result.unique_values }))
-        } catch (err) {
-          setError(err instanceof Error ? err.message : "Erreur lors du chargement des valeurs")
-          return
-        }
-      }
-    } else {
-      // Replier
-      setExpandedColumns(prev => ({ ...prev, [columnName]: false }))
     }
+
+    if (!isExpanded && !columnValues[columnName]) {
+      // Charger les valeurs de la colonne depuis l'API
+      try {
+        setLoadingColumnValues(prev => ({ ...prev, [columnName]: true }))
+
+        const formData = new FormData()
+        formData.append("filename", previewData.filename)
+        formData.append("column_name", columnName)
+
+
+
+        formData.append("search", dataSearchTerm || "")
+        formData.append("offset", "0")
+        // Charge léger au premier dépliage pour éviter les timeouts
+        formData.append("limit", "100")
+
+        const response = await apiFetch("/excel/get-column-values", {
+          method: "POST",
+          body: formData
+        })
+
+        if (!response.ok) {
+          const errorText = await response.text()
+
+          throw new Error(`Erreur HTTP: ${response.status} - ${errorText}`)
+        }
+
+        const result = await response.json()
+
+        setColumnValues(prev => ({
+          ...prev,
+          [columnName]: result.unique_values
+        }))
+        setColumnPageInfo(prev => ({
+          ...prev,
+          [columnName]: {
+            offset: (result.offset ?? 0) + (Array.isArray(result.unique_values) ? result.unique_values.length : 0),
+            limit: result.limit ?? 100,
+            hasMore: !!result.has_more,
+          }
+        }))
+        setLoadingColumnValues(prev => ({ ...prev, [columnName]: false }))
+        setColumnLoadErrors(prev => ({ ...prev, [columnName]: null }))
+        // Préparer pagination si besoin
+        if (result.has_more) {
+          // stocker un marqueur simple pour un "Charger plus" ultérieur (implémentable si nécessaire)
+        }
+        
+
+      } catch (err) {
+
+        const message = err instanceof Error ? err.message : "Erreur lors du chargement des valeurs"
+        setColumnLoadErrors(prev => ({ ...prev, [columnName]: message }))
+        setLoadingColumnValues(prev => ({ ...prev, [columnName]: false }))
+        return
+      }
+    }
+
+    // Basculer l'état d'expansion
+    if (isExpanded) {
+      setExpandedColumns(prev => ({
+        ...prev,
+        [columnName]: false
+      }))
+    }
+    
+
   }
 
   // Fonction pour gérer la sélection de la checkbox "Variable à expliquer"
@@ -409,9 +613,14 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
           formData.append("filename", previewData?.filename || '') // Use optional chaining
           formData.append("column_name", columnName)
 
+          formData.append("search", "")
+          formData.append("offset", "0")
+          // Ne pas tenter d'énormes listes d'un coup
+          formData.append("limit", "500")
+
           const response = await apiFetch("/excel/get-column-values", {
             method: "POST",
-            body: formData,
+            body: formData
           })
 
           if (!response.ok) {
@@ -693,7 +902,7 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
       <div className="text-center p-8">
         <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
           <strong>❌ Serveur inaccessible</strong>
-          <p className="mt-2">Le serveur backend n'est pas accessible sur http://localhost:8000</p>
+          <p className="mt-2">Le serveur backend n'est pas accessible</p>
           <p className="text-sm">Vérifiez que votre serveur FastAPI est démarré</p>
         </div>
         <Button onClick={checkServerStatus} className="bg-blue-600 hover:bg-blue-700">
@@ -889,39 +1098,97 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
                         </div>
                         
                         {/* Affichage des valeurs uniques */}
-                        {columnValues[column] ? (
-                          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2 max-h-64 overflow-y-auto">
-                            {columnValues[column]
-                              .filter((value: any) => 
-                                !dataSearchTerm || String(value).toLowerCase().includes(dataSearchTerm.toLowerCase())
-                              )
-                              .map((value, valueIndex) => (
-                              <label key={valueIndex} className="flex items-center space-x-2 p-2 border rounded hover:bg-gray-50 cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  checked={selectedColumnValues[column]?.includes(value) || false}
-                                  onChange={(e) => 
-                                    handleColumnValueSelection(column, value, e.target.checked)
-                                  }
-                                  className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
-                                />
-                                <span className="text-sm truncate" title={String(value)}>
-                                  {String(value)}
-                                </span>
-                              </label>
-                            ))}
-                          </div>
-                        ) : (
+                        {loadingColumnValues[column] && !columnValues[column] ? (
                           <div className="text-center py-4">
                             <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-green-600 mx-auto mb-2"></div>
                             <p className="text-sm text-gray-500">Chargement des valeurs...</p>
-                            <p className="text-xs text-gray-400 mt-1">
-                              Debug: expandedColumns[{column}] = {String(expandedColumns[column])}
-                            </p>
-                            <p className="text-xs text-gray-400">
-                              Debug: columnValues[{column}] = {String(columnValues[column])}
-                            </p>
                           </div>
+                        ) : columnValues[column] ? (
+                          <>
+                            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2 max-h-64 overflow-y-auto">
+                              {columnValues[column]
+                                .filter((value: any) => 
+                                  !dataSearchTerm || String(value).toLowerCase().includes(dataSearchTerm.toLowerCase())
+                                )
+                                .map((value, valueIndex) => (
+                                <label key={valueIndex} className="flex items-center space-x-2 p-2 border rounded hover:bg-gray-50 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedColumnValues[column]?.includes(value) || false}
+                                    onChange={(e) => 
+                                      handleColumnValueSelection(column, value, e.target.checked)
+                                    }
+                                    className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
+                                  />
+                                  <span className="text-sm truncate" title={String(value)}>
+                                    {String(value)}
+                                  </span>
+                                </label>
+                              ))}
+                            </div>
+                            {/* Charger plus */}
+                            {columnPageInfo[column]?.hasMore && (
+                              <div className="mt-3 text-center">
+                                <Button
+                                  disabled={columnPageInfo[column]?.loadingMore}
+                                  onClick={async () => {
+                                    try {
+                                      setColumnPageInfo(prev => ({ ...prev, [column]: { ...(prev[column] || { offset: columnValues[column]?.length || 0, limit: 100, hasMore: true }), loadingMore: true } }))
+                                      const pi = columnPageInfo[column] || { offset: columnValues[column]?.length || 0, limit: 100, hasMore: true }
+                                      const formData = new FormData()
+                                      formData.append("filename", previewData.filename)
+                                      formData.append("column_name", column)
+                                      formData.append("search", dataSearchTerm || "")
+                                      formData.append("offset", String(pi.offset || (columnValues[column]?.length || 0)))
+                                      formData.append("limit", String(pi.limit || 100))
+
+                                      const response = await apiFetch("/excel/get-column-values", { method: "POST", body: formData })
+                                      if (!response.ok) {
+                                        const errorText = await response.text()
+                                        throw new Error(`Erreur HTTP: ${response.status} - ${errorText}`)
+                                      }
+                                      const res = await response.json()
+                                      setColumnValues(prev => {
+                                        const existing = prev[column] || []
+                                        const existingSet = new Set(existing.map(v => String(v)))
+                                        const toAppend = (res.unique_values || []).filter((v: any) => !existingSet.has(String(v)))
+                                        return { ...prev, [column]: [...existing, ...toAppend] }
+                                      })
+                                      setColumnPageInfo(prev => ({
+                                        ...prev,
+                                        [column]: {
+                                          offset: (res.offset ?? 0) + ((res.unique_values || []).length),
+                                          limit: res.limit ?? (pi.limit || 100),
+                                          hasMore: !!res.has_more,
+                                          loadingMore: false
+                                        }
+                                      }))
+                                    } catch (e) {
+                                      setColumnPageInfo(prev => ({ ...prev, [column]: { ...(prev[column] || { offset: 0, limit: 100, hasMore: true }), loadingMore: false } }))
+                                      setColumnLoadErrors(prev => ({ ...prev, [column]: e instanceof Error ? e.message : "Erreur lors du chargement supplémentaire" }))
+                                    }
+                                  }}
+                                  className="bg-green-600 hover:bg-green-700"
+                                >
+                                  {columnPageInfo[column]?.loadingMore ? "Chargement..." : "Charger plus"}
+                                </Button>
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          // Erreur spécifique à la colonne
+                          columnLoadErrors[column] ? (
+                            <div className="text-center py-4">
+                              <div className="bg-red-100 border border-red-300 text-red-700 px-3 py-2 rounded inline-block">
+                                {columnLoadErrors[column]}
+                              </div>
+                              <div className="mt-3">
+                                <Button onClick={() => handleColumnExpansion(column)} className="bg-green-600 hover:bg-green-700">
+                                  Réessayer
+                                </Button>
+                              </div>
+                            </div>
+                          ) : null
                         )}
                         
                         {/* Résumé de la sélection */}
@@ -1167,6 +1434,7 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
                   data={remainingData?.remaining_data[columnName] || []}
                   selectedData={selectedRemainingData[columnName] || []}
                   onDataSelection={handleDataSelection}
+                  filename={previewData.filename}
                 />
               ))}
           </div>
