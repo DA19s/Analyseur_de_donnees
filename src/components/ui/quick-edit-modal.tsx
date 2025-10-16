@@ -75,9 +75,6 @@ export default function QuickEditModal({ editType, returnToPage, onClose }: Quic
         formData.append("filename", previewData.filename)
         formData.append("column_name", variable)
 
-        formData.append("search", "")
-        formData.append("offset", "0")
-        formData.append("limit", "200")
         const response = await apiFetch("/excel/get-column-values", {
           method: "POST",
           body: formData,
@@ -176,9 +173,6 @@ export default function QuickEditModal({ editType, returnToPage, onClose }: Quic
         formData.append("filename", previewData.filename)
         formData.append("column_name", columnName)
 
-        formData.append("search", "")
-        formData.append("offset", "0")
-        formData.append("limit", "200")
         const response = await apiFetch("/excel/get-column-values", {
           method: "POST",
           body: formData,
@@ -686,10 +680,7 @@ export default function QuickEditModal({ editType, returnToPage, onClose }: Quic
                                         formData.append("filename", previewData.filename)
                                         formData.append("column_name", columnName)
 
-                                        formData.append("search", "")
-                                        formData.append("offset", "0")
-                                        formData.append("limit", "200")
-                                        const response = await apiFetch("/excel/get-column-values", {
+                                        const response = await fetch("http://localhost:8000/excel/get-column-values", {
                                           method: "POST",
                                           body: formData,
                                         })
