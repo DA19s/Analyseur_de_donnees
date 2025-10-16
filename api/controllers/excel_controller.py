@@ -253,8 +253,8 @@ async def get_column_unique_values(filename: str, column_name: str, search: Opti
                 max_seconds = 6.0  # budget temps pour éviter timeouts plateformes gratuites
                 skipped = 0
                 for row in ws.iter_rows(min_row=2, min_col=col_idx, max_col=col_idx, values_only=True):
-                    # Stop si on a un budget temps dépassé mais déjà des résultats
-                    if (time.perf_counter() - start_time) > max_seconds and len(collected) > 0:
+                    # Stop si on dépasse le budget temps, on renvoie ce qui est collecté (même vide)
+                    if (time.perf_counter() - start_time) > max_seconds:
                         has_more_flag = True
                         break
                     cell_value = row[0]
