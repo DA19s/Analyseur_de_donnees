@@ -589,12 +589,9 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
       }
 
       const result = await response.json()
-      if ((result as any)?.error) {
-        setError(typeof (result as any).error === 'string' ? (result as any).error : 'Erreur lors de la récupération des colonnes restantes')
-        setIsSubmitting(false)
-        return
-      }
-      setRemainingData(result)
+
+        
+        setRemainingData(result)
         setStep('remaining-data')
         // Notifier la page parent du changement d'étape
         if (onStepChange) {
@@ -1157,7 +1154,7 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
               </div>
               {dataSearchTerm && (
                 <p className="text-sm text-gray-500 mt-1">
-                  {filteredRemainingColumns.length} colonne(s) trouvée(s) sur {remainingData?.remaining_columns?.length ?? 0}
+                  {filteredRemainingColumns.length} colonne(s) trouvée(s) sur {remainingData?.remaining_columns.length}
                 </p>
               )}
             </div>
