@@ -36,21 +36,76 @@ function DataSelectionAccordion({
   columnName, 
   data, 
   selectedData, 
-  onDataSelection 
+  onDataSelection,
+  filename
 }: { 
   columnName: string
   data: any[]
   selectedData: any[]
-  onDataSelection: (columnName: string, value: any, checked: boolean) => void
+  onDataSelection: (columnName: string, value: any, checked: boolean) => void,
+  filename: string
 }) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
+  const [values, setValues] = useState<any[]>(data || [])
+  const [loading, setLoading] = useState<boolean>(false)
+  const [error, setError] = useState<string | null>(null)
+  const [pageInfo, setPageInfo] = useState<{ offset: number, limit: number, hasMore: boolean, loadingMore?: boolean }>({ offset: (data || []).length, limit: 100, hasMore: false })
+
+  // Synchroniser si le parent fournit des données pré-chargées
+  useEffect(() => {
+    if (Array.isArray(data) && data.length > 0) {
+      setValues(data)
+      setPageInfo(prev => ({ ...prev, offset: data.length, hasMore: false }))
+    }
+  }, [data])
+
+  const fetchValues = async (offset: number, limit: number) => {
+    const formData = new FormData()
+    formData.append("filename", filename)
+    formData.append("column_name", columnName)
+    formData.append("search", "")
+    formData.append("offset", String(offset))
+    formData.append("limit", String(limit))
+
+    const response = await apiFetch("/excel/get-column-values", { method: "POST", body: formData })
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`Erreur HTTP: ${response.status} - ${errorText}`)
+    }
+    const json = await response.json()
+    if (json && json.error) {
+      throw new Error(json.error)
+    }
+    return json
+  }
 
   return (
     <Card className="border-2">
       <CardHeader 
         className="cursor-pointer hover:bg-gray-50"
-        onClick={() => setIsExpanded(!isExpanded)}
+        onClick={async () => {
+          const willExpand = !isExpanded
+          setIsExpanded(willExpand)
+          if (willExpand && values.length === 0 && !loading) {
+            try {
+              setLoading(true)
+              setError(null)
+              const res = await fetchValues(0, 100)
+              setValues(res.unique_values || [])
+              setPageInfo({
+                offset: (res.offset ?? 0) + ((res.unique_values || []).length),
+                limit: res.limit ?? 100,
+                hasMore: !!res.has_more,
+                loadingMore: false
+              })
+            } catch (e) {
+              setError(e instanceof Error ? e.message : "Erreur lors du chargement des valeurs")
+            } finally {
+              setLoading(false)
+            }
+          }
+        }}
       >
         <div className="flex items-center justify-between">
           <div className="flex-1">
@@ -68,12 +123,12 @@ function DataSelectionAccordion({
             <div className="flex items-center space-x-2">
               <input
                 type="checkbox"
-                checked={selectedData.length === data.length && data.length > 0}
+                checked={selectedData.length === values.length && values.length > 0}
                 onChange={(e) => {
                   e.stopPropagation()
                   if (e.target.checked) {
                     // Cocher toutes les modalités
-                    data.forEach(value => {
+                    values.forEach(value => {
                       if (!selectedData.includes(value)) {
                         onDataSelection(columnName, value, true)
                       }
@@ -120,15 +175,26 @@ function DataSelectionAccordion({
             </div>
             {searchTerm && (
               <p className="text-sm text-gray-500 mt-1">
-                {data.filter((value: any) => 
+                {values.filter((value: any) => 
                   String(value).toLowerCase().includes(searchTerm.toLowerCase())
-                ).length} modalité(s) trouvée(s) sur {data.length}
+                ).length} modalité(s) trouvée(s) sur {values.length}
               </p>
             )}
           </div>
           
+          {loading && values.length === 0 ? (
+            <div className="text-center py-4">
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto mb-2"></div>
+              <p className="text-sm text-gray-500">Chargement des valeurs...</p>
+            </div>
+          ) : error ? (
+            <div className="text-center py-4">
+              <div className="bg-red-100 border border-red-300 text-red-700 px-3 py-2 rounded inline-block">{error}</div>
+            </div>
+          ) : (
+          <>
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
-            {data
+            {values
               .filter((value: any) => 
                 !searchTerm || String(value).toLowerCase().includes(searchTerm.toLowerCase())
               )
@@ -146,6 +212,38 @@ function DataSelectionAccordion({
               </label>
             ))}
           </div>
+          {pageInfo.hasMore && (
+            <div className="mt-3 text-center">
+              <Button
+                disabled={pageInfo.loadingMore}
+                onClick={async () => {
+                  try {
+                    setPageInfo(prev => ({ ...prev, loadingMore: true }))
+                    const res = await fetchValues(pageInfo.offset || values.length, pageInfo.limit || 100)
+                    setValues(prev => {
+                      const existingSet = new Set(prev.map(v => String(v)))
+                      const toAppend = (res.unique_values || []).filter((v: any) => !existingSet.has(String(v)))
+                      return [...prev, ...toAppend]
+                    })
+                    setPageInfo({
+                      offset: (res.offset ?? 0) + ((res.unique_values || []).length),
+                      limit: res.limit ?? (pageInfo.limit || 100),
+                      hasMore: !!res.has_more,
+                      loadingMore: false
+                    })
+                  } catch (e) {
+                    setError(e instanceof Error ? e.message : "Erreur lors du chargement supplémentaire")
+                    setPageInfo(prev => ({ ...prev, loadingMore: false }))
+                  }
+                }}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                {pageInfo.loadingMore ? "Chargement..." : "Charger plus"}
+              </Button>
+            </div>
+          )}
+          </>
+          )}
         </CardContent>
       )}
     </Card>
@@ -1275,6 +1373,7 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
                   data={remainingData?.remaining_data[columnName] || []}
                   selectedData={selectedRemainingData[columnName] || []}
                   onDataSelection={handleDataSelection}
+                  filename={previewData.filename}
                 />
               ))}
           </div>
