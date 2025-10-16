@@ -1,113 +1,111 @@
-import os
-import tempfile
-import shutil
 import pandas as pd
 import numpy as np
 import json
 from typing import Dict, List, Any, Optional, Tuple
+import os
+import tempfile
+import shutil
 from reportlab.lib.pagesizes import letter, A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 import io
 import base64
-# Imports matplotlib supprimés - les diagrammes sont maintenant générés côté frontend
 
 # Stockage temporaire en mémoire
 uploaded_files = {}
 
-from openpyxl import load_workbook
+# Helpers pour lecture légère et sélection d'engines
+def _select_engine(path: str) -> Optional[str]:
+    lower = path.lower()
+    if lower.endswith('.xlsx'):
+        return 'openpyxl'
+    if lower.endswith('.xls'):
+        return 'xlrd'
+    return None
+
+def _read_excel(path: str, nrows: Optional[int] = None, usecols: Optional[List[str]] = None) -> pd.DataFrame:
+    engine = _select_engine(path)
+    return pd.read_excel(path, nrows=nrows, usecols=usecols, engine=engine)
 
 async def preview_excel(file):
     if not file.filename.endswith((".xls", ".xlsx")):
         return {"error": "Le fichier doit être un Excel (.xls ou .xlsx)"}
     
-    # Sauvegarder l'upload en fichier temporaire pour évaluer la taille et convertir si besoin
-    try:
-        suffix = ".xlsx" if file.filename.lower().endswith('.xlsx') else ".xls"
-        tmp_dir = tempfile.gettempdir()
-        tmp_path = os.path.join(tmp_dir, f"preview_{next(tempfile._get_candidate_names())}{suffix}")
-        try:
-            file.file.seek(0)
-        except Exception:
-            pass
-        with open(tmp_path, "wb") as out:
-            shutil.copyfileobj(file.file, out)
+    # Sauvegarder le fichier en temporaire pour éviter de charger tout le DataFrame
+    suffix = ".xlsx" if file.filename.lower().endswith(".xlsx") else ".xls"
+    tmp_dir = tempfile.gettempdir()
+    tmp_path = os.path.join(tmp_dir, f"preview_{next(tempfile._get_candidate_names())}{suffix}")
 
-        path_to_read = tmp_path
-        # Conversion .xls -> .xlsx si taille raisonnable (seuil augmenté à 30 Mo)
-        if file.filename.lower().endswith('.xls'):
-            try:
-                size_mb = max(0.0, os.path.getsize(tmp_path) / 1_000_000.0)
-                if size_mb <= 30.0:
-                    xls_df = pd.read_excel(tmp_path)
-                    converted_path = os.path.join(tempfile.gettempdir(), f"converted_{next(tempfile._get_candidate_names())}.xlsx")
-                    xls_df.to_excel(converted_path, index=False)
-                    path_to_read = converted_path
-            except Exception:
-                path_to_read = tmp_path
+    file.file.seek(0)
+    with open(tmp_path, "wb") as out:
+        shutil.copyfileobj(file.file, out)
 
-        # Lecture du DataFrame
-        df = pd.read_excel(path_to_read)
-        df = df.replace([np.nan, np.inf, -np.inf], None)
+    # Lecture légère: colonnes + premières lignes
+    sample_df = _read_excel(tmp_path, nrows=5)
+    sample_df = sample_df.replace([np.nan, np.inf, -np.inf], None)
 
-        uploaded_files[file.filename] = df
+    uploaded_files[file.filename] = {
+        "path": tmp_path,
+        "df": None,  # chargé plus tard si nécessaire
+        "columns": sample_df.columns.tolist()
+    }
 
-        return {
-            "filename": file.filename,
-            "rows": int(len(df)),
-            "columns": df.columns.tolist(),
-            "preview": df.head(5).to_dict(orient="records")
-        }
-    except Exception as e:
-        return {"error": f"Preview failed: {str(e)}"}
+    return {
+        "filename": file.filename,
+        "rows": int(len(sample_df)),
+        "columns": sample_df.columns.tolist(),
+        "preview": sample_df.head(5).to_dict(orient="records")
+    }
 
 async def select_columns(filename: str, variables_explicatives: List[str], variable_a_expliquer: List[str], selected_data: Dict = None):
     if filename not in uploaded_files:
         return {"error": "Fichier non trouvé. Faites d'abord /excel/preview."}
     
-    df = uploaded_files[filename]
+    file_ref = uploaded_files[filename]
+    # Support rétro-compatible si ancien format (DataFrame direct)
+    df = file_ref if isinstance(file_ref, pd.DataFrame) else file_ref.get("df")
 
-    # Vérifier que toutes les colonnes existent
+    # Colonnes demandées
     all_columns = variables_explicatives + variable_a_expliquer
-    for col in all_columns:
-        if col not in df.columns:
-            return {"error": f"La colonne '{col}' n'existe pas dans {filename}"}
 
     # Identifier les colonnes restantes (celles qui ne sont ni explicatives ni à expliquer)
-    all_df_columns = set(df.columns)
+    # Déterminer les colonnes disponibles sans charger tout le DataFrame
+    if isinstance(file_ref, dict) and "columns" in file_ref:
+        all_df_columns = set([str(c) for c in file_ref["columns"]])
+    else:
+        all_df_columns = set(df.columns)
     remaining_columns = list(all_df_columns - set(all_columns))
-    
-    # Si selected_data n'est pas fourni, retourner les données des colonnes restantes
+
+    # Vérifier que les colonnes demandées existent sans nécessiter le DataFrame complet
+    for col in all_columns:
+        if col not in all_df_columns:
+            return {"error": f"La colonne '{col}' n'existe pas dans {filename}"}
+
+    # Si selected_data n'est pas fourni, retourner uniquement les noms des colonnes restantes (lazy load des valeurs)
     if selected_data is None:
-        remaining_data = {}
-        for col in remaining_columns:
-            # Récupérer toutes les valeurs uniques de la colonne
-            unique_values = df[col].dropna().unique()
-            # Convertir en types Python natifs
-            converted_values = []
-            for val in unique_values:
-                if pd.isna(val):
-                    converted_values.append(None)
-                elif isinstance(val, (np.integer, np.floating)):
-                    converted_values.append(float(val) if isinstance(val, np.floating) else int(val))
-                else:
-                    converted_values.append(str(val))
-            
-            remaining_data[str(col)] = converted_values
-        
         return {
             "filename": str(filename),
             "variables_explicatives": [str(col) for col in variables_explicatives],
             "variables_a_expliquer": [str(var) for var in variable_a_expliquer],
             "remaining_columns": [str(col) for col in remaining_columns],
-            "remaining_data": remaining_data,
+            "remaining_data": {},
             "message": "Veuillez sélectionner les données des colonnes restantes sur lesquelles vous voulez travailler"
         }
     
-    # Si selected_data est fourni, traiter la sélection finale
+    # Si selected_data est fourni, traiter la sélection finale (charger DF si nécessaire)
+    if df is None and isinstance(file_ref, dict):
+        try:
+            df = _read_excel(file_ref["path"])
+            file_ref["df"] = df
+        except Exception as e:
+            return {"error": f"Impossible de charger le fichier complet: {str(e)}"}
+
+    # Re-sécurité si pour une raison quelconque df reste None
+    if df is None:
+        return {"error": "Données introuvables pour ce fichier. Veuillez relancer l'aperçu."}
     # Préparer les données explicatives
     X = df[variables_explicatives]
     
@@ -201,13 +199,26 @@ async def get_column_unique_values(filename: str, column_name: str):
     if filename not in uploaded_files:
         return {"error": "Fichier non trouvé. Faites d'abord /excel/preview."}
     
-    df = uploaded_files[filename]
-    
-    if column_name not in df.columns:
-        return {"error": f"La colonne '{column_name}' n'existe pas dans {filename}"}
-    
+    file_ref = uploaded_files[filename]
+    # Si nous avons un DataFrame entier (ancien comportement)
+    if isinstance(file_ref, pd.DataFrame):
+        df = file_ref
+        if column_name not in df.columns:
+            return {"error": f"La colonne '{column_name}' n'existe pas dans {filename}"}
+        series = df[column_name]
+    else:
+        # Lecture ciblée uniquement de la colonne depuis le disque
+        path = file_ref.get("path")
+        try:
+            col_df = _read_excel(path, usecols=[column_name])
+        except Exception as e:
+            return {"error": f"Lecture colonne échouée: {str(e)}"}
+        if column_name not in col_df.columns:
+            return {"error": f"La colonne '{column_name}' n'existe pas dans {filename}"}
+        series = col_df[column_name]
+
     # Récupérer toutes les valeurs uniques de la colonne
-    unique_values = df[column_name].dropna().unique()
+    unique_values = series.dropna().unique()
     
     # Convertir en types Python natifs
     converted_values = []
@@ -335,8 +346,7 @@ def calculate_branch_percentages(df: pd.DataFrame, explanatory_var: str,
             if total_explanatory > 0:
                 percentage = (target_and_explanatory / total_explanatory) * 100
                 branches[str(explanatory_value)] = {
-                    "count": int(target_and_explanatory),   # cas cibles
-                    "total": int(total_explanatory),         # effectif total de la branche
+                    "count": int(target_and_explanatory),
                     "percentage": round(percentage, 2),
                     "subtree": None  # Sera rempli récursivement
                 }
@@ -347,8 +357,7 @@ def calculate_branch_percentages(df: pd.DataFrame, explanatory_var: str,
         return {}
 
 def construct_tree_for_value(df: pd.DataFrame, target_value: Any, target_var: str, 
-                           available_explanatory_vars: List[str], current_path: List[str] = None,
-                           min_population_threshold: Optional[int] = None) -> Dict[str, Any]:
+                           available_explanatory_vars: List[str], current_path: List[str] = None) -> Dict[str, Any]:
     """
     Construit récursivement l'arbre de décision pour une valeur cible donnée.
     """
@@ -403,35 +412,35 @@ def construct_tree_for_value(df: pd.DataFrame, target_value: Any, target_var: st
         filtered_df = df[branch_mask]
         
         if len(filtered_df) > 0 and remaining_vars:
-            # Vérifier le seuil d'effectif minimum (0 = pas de limite)
-            if min_population_threshold and min_population_threshold > 0 and len(filtered_df) < min_population_threshold:
-                # Arrêter la construction si l'effectif est trop faible
-                branch_data["subtree"] = {
-                    "type": "leaf",
-                    "message": f"[ARRET] Branche arrêtée - Effectif insuffisant ({len(filtered_df)} < {min_population_threshold})"
-                }
-            else:
-                # Construire le sous-arbre récursivement
-                subtree = construct_tree_for_value(
-                    filtered_df, target_value, target_var, 
-                    remaining_vars, current_path + [best_var, branch_value],
-                    min_population_threshold
-                )
-                branch_data["subtree"] = subtree
+            # Construire le sous-arbre récursivement
+            subtree = construct_tree_for_value(
+                filtered_df, target_value, target_var, 
+                remaining_vars, current_path + [best_var, branch_value]
+            )
+            branch_data["subtree"] = subtree
     
     return tree_node
 
 async def build_decision_tree(filename: str, variables_explicatives: List[str], 
-                            variables_a_expliquer: List[str], selected_data: Dict[str, Any], 
-                            min_population_threshold: Optional[int] = None,
-                            treatment_mode: str = 'independent') -> Dict[str, Any]:
+                            variables_a_expliquer: List[str], selected_data: Dict[str, Any]) -> Dict[str, Any]:
     """
     Construit l'arbre de décision complet pour toutes les variables à expliquer.
     """
     if filename not in uploaded_files:
         return {"error": "Fichier non trouvé. Faites d'abord /excel/preview."}
     
-    df = uploaded_files[filename]
+    file_ref = uploaded_files[filename]
+    # Charger DataFrame à la demande si nous avons un chemin
+    if isinstance(file_ref, dict):
+        df = file_ref.get("df")
+        if df is None:
+            try:
+                df = _read_excel(file_ref.get("path"))
+                file_ref["df"] = df
+            except Exception as e:
+                return {"error": f"Impossible de charger le fichier complet: {str(e)}"}
+    else:
+        df = file_ref
     
     # Étape 1: Filtrer l'échantillon initial basé sur les variables restantes sélectionnées
     
@@ -465,81 +474,31 @@ async def build_decision_tree(filename: str, variables_explicatives: List[str],
     # Analyser l'impact du filtrage sur les variables explicatives
     filtering_analysis = analyze_sample_filtering_impact(df, filtered_df, variables_explicatives)
     
-    # Étape 2: Construire l'arbre selon le mode de traitement
+    # Étape 2: Construire l'arbre pour chaque variable à expliquer
     
     decision_trees = {}
     
-    if treatment_mode == 'together':
-        # Mode ensemble : traiter toutes les variables ensemble
-        # Créer une variable combinée qui prend la valeur True si l'une des variables cibles est présente
-        
-        # Créer un masque pour les lignes qui ont l'une des valeurs cibles
-        combined_mask = pd.Series([False] * len(filtered_df), index=filtered_df.index)
-        
-        # Si toutes les modalités sont dans la même variable
-        if len(variables_a_expliquer) == 1:
-            target_var = variables_a_expliquer[0]
-            if target_var in selected_data and selected_data[target_var]:
-                # Utiliser toutes les modalités sélectionnées de cette variable
-                combined_mask = filtered_df[target_var].isin(selected_data[target_var])
-            else:
-                combined_mask = filtered_df[target_var].notna()
+    for target_var in variables_a_expliquer:
+        # IMPORTANT: Utiliser seulement les valeurs SÉLECTIONNÉES, pas toutes les valeurs uniques
+        if target_var in selected_data and selected_data[target_var]:
+            # Utiliser les valeurs sélectionnées par l'utilisateur
+            target_values = selected_data[target_var]
         else:
-            # Si les modalités sont dans plusieurs variables différentes
-            for target_var in variables_a_expliquer:
-                if target_var in selected_data and selected_data[target_var]:
-                    var_mask = filtered_df[target_var].isin(selected_data[target_var])
-                else:
-                    var_mask = filtered_df[target_var].notna()
-                combined_mask = combined_mask | var_mask
+            # Fallback: utiliser toutes les valeurs uniques si aucune sélection
+            target_values = filtered_df[target_var].dropna().unique()
         
-        # Créer un DataFrame avec une variable combinée
-        combined_df = filtered_df.copy()
-        combined_df['_combined_target'] = combined_mask
-        
-        # Construire l'arbre pour la variable combinée
         target_trees = {}
-        tree = construct_tree_for_value(
-            combined_df, True, '_combined_target', 
-            variables_explicatives.copy(), [],
-            min_population_threshold
-        )
-        target_trees['Combined'] = tree
         
-        # Créer un nom descriptif avec les noms des variables
-        if len(variables_a_expliquer) == 1:
-            # Une seule variable : utiliser son nom
-            combined_name = variables_a_expliquer[0]
-        else:
-            # Plusieurs variables : les joindre avec des virgules
-            combined_name = " + ".join(variables_a_expliquer)
+        for target_value in target_values:
+            # Construire l'arbre pour cette valeur
+            tree = construct_tree_for_value(
+                filtered_df, target_value, target_var, 
+                variables_explicatives.copy(), []
+            )
+            
+            target_trees[str(target_value)] = tree
         
-        decision_trees[combined_name] = target_trees
-        
-    else:
-        # Mode indépendant : traiter chaque variable séparément (comportement original)
-        for target_var in variables_a_expliquer:
-            # IMPORTANT: Utiliser seulement les valeurs SÉLECTIONNÉES, pas toutes les valeurs uniques
-            if target_var in selected_data and selected_data[target_var]:
-                # Utiliser les valeurs sélectionnées par l'utilisateur
-                target_values = selected_data[target_var]
-            else:
-                # Fallback: utiliser toutes les valeurs uniques si aucune sélection
-                target_values = filtered_df[target_var].dropna().unique()
-            
-            target_trees = {}
-            
-            for target_value in target_values:
-                # Construire l'arbre pour cette valeur
-                tree = construct_tree_for_value(
-                    filtered_df, target_value, target_var, 
-                    variables_explicatives.copy(), [],
-                    min_population_threshold
-                )
-                
-                target_trees[str(target_value)] = tree
-            
-            decision_trees[target_var] = target_trees
+        decision_trees[target_var] = target_trees
     
     return {
         "filename": filename,
@@ -547,149 +506,8 @@ async def build_decision_tree(filename: str, variables_explicatives: List[str],
         "variables_a_expliquer": variables_a_expliquer,
         "filtered_sample_size": len(filtered_df),
         "original_sample_size": len(df),
-        "decision_trees": decision_trees,
-        "treatment_mode": treatment_mode
+        "decision_trees": decision_trees
     }
-
-def create_tree_diagram(decision_trees: Dict[str, Any]) -> str:
-    """
-    Crée un diagramme visuel de l'arbre de décision avec matplotlib.
-    """
-    try:
-        fig, ax = plt.subplots(1, 1, figsize=(16, 12))
-        ax.set_xlim(0, 12)
-        ax.set_ylim(0, 12)
-        ax.axis('off')
-        
-        # Couleurs pour les différents types de nœuds
-        node_colors = {
-            'root': '#4CAF50',      # Vert pour la racine
-            'node': '#2196F3',      # Bleu pour les nœuds
-            'leaf': '#FF9800',      # Orange pour les feuilles
-            'stopped': '#F44336'    # Rouge pour les branches arrêtées
-        }
-        
-        y_positions = []
-        x_positions = []
-        
-        def draw_node(x, y, text, node_type='node', width=1.5, height=0.8):
-            """Dessine un nœud de l'arbre"""
-            color = node_colors.get(node_type, node_colors['node'])
-            
-            # Créer un rectangle arrondi
-            rect = FancyBboxPatch(
-                (x - width/2, y - height/2), width, height,
-                boxstyle="round,pad=0.1",
-                facecolor=color,
-                edgecolor='black',
-                linewidth=1,
-                alpha=0.8
-            )
-            ax.add_patch(rect)
-            
-            # Ajouter le texte
-            ax.text(x, y, text, ha='center', va='center', 
-                   fontsize=8, fontweight='bold', color='white',
-                   wrap=True)
-            
-            return x, y
-        
-        def draw_connection(x1, y1, x2, y2):
-            """Dessine une connexion entre deux nœuds"""
-            ax.plot([x1, x2], [y1, y2], 'k-', linewidth=1.5, alpha=0.7)
-        
-        def draw_tree_recursive(tree_data, x, y, level=0, max_level=5):
-            """Dessine l'arbre récursivement"""
-            if level > max_level:
-                return
-            
-            # Dessiner le nœud actuel
-            if level == 0:
-                node_type = 'root'
-                text = "Racine"
-            elif tree_data.get('type') == 'leaf':
-                node_type = 'leaf'
-                text = f"Feuille\n{tree_data.get('message', '')[:30]}..."
-            else:
-                node_type = 'node'
-                text = f"{tree_data.get('variable', 'Nœud')}\n(σ: {tree_data.get('variance', 0):.2f})"
-            
-            draw_node(x, y, text, node_type)
-            
-            # Dessiner les branches
-            if tree_data.get('branches') and level < max_level:
-                branches = list(tree_data['branches'].items())
-                num_branches = len(branches)
-                
-                if num_branches > 0:
-                    # Calculer les positions des branches avec plus d'espace
-                    branch_spacing = 1.5
-                    start_x = x - (num_branches - 1) * branch_spacing / 2
-                    
-                    for i, (branch_value, branch_data) in enumerate(branches):
-                        branch_x = start_x + i * branch_spacing
-                        branch_y = y - 1.5
-                        
-                        # Dessiner la connexion
-                        draw_connection(x, y - 0.4, branch_x, branch_y + 0.4)
-                        
-                        # Dessiner l'étiquette de la branche
-                        ax.text((x + branch_x) / 2, (y + branch_y) / 2, 
-                               f"{branch_value}\n({branch_data.get('count', 0)})", 
-                               ha='center', va='center', fontsize=6,
-                               bbox=dict(boxstyle="round,pad=0.1", facecolor='lightgray', alpha=0.7))
-                        
-                        # Récursion pour le sous-arbre
-                        if branch_data.get('subtree'):
-                            draw_tree_recursive(branch_data['subtree'], branch_x, branch_y, level + 1, max_level)
-                        else:
-                            # Si c'est une feuille finale, la dessiner
-                            if branch_data.get('count', 0) > 0:
-                                draw_node(branch_x, branch_y, f"Feuille\n{branch_data.get('count', 0)} cas", 'leaf', 1.2, 0.6)
-        
-        # Dessiner chaque arbre
-        y_start = 10
-        for i, (target_var, target_trees) in enumerate(decision_trees.items()):
-            # Titre de l'arbre
-            ax.text(6, y_start + 1, f"Arbre pour: {target_var}", 
-                   ha='center', va='center', fontsize=14, fontweight='bold')
-            
-            # Dessiner le premier arbre de cette variable
-            if target_trees:
-                first_tree = list(target_trees.values())[0]
-                draw_tree_recursive(first_tree, 6, y_start, 0, 5)
-            
-            y_start -= 5
-        
-        # Titre général
-        ax.text(6, 11.5, "Diagramme de l'Arbre de Décision", 
-               ha='center', va='center', fontsize=16, fontweight='bold')
-        
-        # Légende
-        legend_elements = [
-            patches.Patch(color=node_colors['root'], label='Racine'),
-            patches.Patch(color=node_colors['node'], label='Nœud de décision'),
-            patches.Patch(color=node_colors['leaf'], label='Feuille finale'),
-            patches.Patch(color=node_colors['stopped'], label='Branche arrêtée')
-        ]
-        ax.legend(handles=legend_elements, loc='upper right', bbox_to_anchor=(0.98, 0.98))
-        
-        # Sauvegarder en base64
-        buffer = io.BytesIO()
-        plt.savefig(buffer, format='png', dpi=150, bbox_inches='tight', 
-                   facecolor='white', edgecolor='none')
-        buffer.seek(0)
-        
-        # Convertir en base64
-        image_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
-        buffer.close()
-        plt.close(fig)
-        
-        return image_base64
-        
-    except Exception as e:
-
-        return ""
 
 def generate_tree_pdf(decision_trees: Dict[str, Any], filename: str) -> str:
     """
@@ -756,10 +574,6 @@ def generate_tree_pdf(decision_trees: Dict[str, Any], filename: str) -> str:
         # Informations du fichier
         story.append(Paragraph(f"📁 <b>Fichier:</b> {filename}", styles['Normal']))
         story.append(Spacer(1, 15))
-        
-        # Note: Les diagrammes sont maintenant générés côté frontend avec Chart.js
-        story.append(Paragraph("<b>📊 Note:</b> Les diagrammes visuels sont générés côté client avec Chart.js", styles['Normal']))
-        story.append(Spacer(1, 10))
         
         # Fonction récursive pour afficher l'arbre avec structure claire
         def add_tree_to_story(node, level=0, path=""):
@@ -847,14 +661,12 @@ def generate_tree_pdf(decision_trees: Dict[str, Any], filename: str) -> str:
         return ""
 
 async def build_decision_tree_with_pdf(filename: str, variables_explicatives: List[str], 
-                                     variables_a_expliquer: List[str], selected_data: Dict[str, Any], 
-                                     min_population_threshold: Optional[int] = None,
-                                     treatment_mode: str = 'independent') -> Dict[str, Any]:
+                                     variables_a_expliquer: List[str], selected_data: Dict[str, Any]) -> Dict[str, Any]:
     """
     Construit l'arbre de décision et génère le PDF correspondant.
     """
     # Construire l'arbre
-    tree_result = await build_decision_tree(filename, variables_explicatives, variables_a_expliquer, selected_data, min_population_threshold, treatment_mode)
+    tree_result = await build_decision_tree(filename, variables_explicatives, variables_a_expliquer, selected_data)
     
     if "error" in tree_result:
         return tree_result
