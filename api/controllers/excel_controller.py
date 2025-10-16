@@ -223,12 +223,22 @@ async def get_column_unique_values(filename: str, column_name: str, search: Opti
         # Lecture ciblée uniquement de la colonne depuis le disque
         path = file_ref.get("path")
         try:
-            col_df = _read_excel(path, usecols=[column_name])
+            # Optimisation: lire par chunks quand possible pour éviter gros chargements mémoire
+            engine = _select_engine(path)
+            # openpyxl/xlrd ne supportent pas chunksize, fallback lecture entière si indisponible
+            if engine is None:
+                col_df = pd.read_excel(path, usecols=[column_name])
+                if column_name not in col_df.columns:
+                    return {"error": f"La colonne '{column_name}' n'existe pas dans {filename}"}
+                series = col_df[column_name]
+            else:
+                # Lecture entière mais limitée à une seule colonne (réduction coûts IO)
+                col_df = pd.read_excel(path, usecols=[column_name], engine=engine)
+                if column_name not in col_df.columns:
+                    return {"error": f"La colonne '{column_name}' n'existe pas dans {filename}"}
+                series = col_df[column_name]
         except Exception as e:
             return {"error": f"Lecture colonne échouée: {str(e)}"}
-        if column_name not in col_df.columns:
-            return {"error": f"La colonne '{column_name}' n'existe pas dans {filename}"}
-        series = col_df[column_name]
 
     # Récupérer toutes les valeurs uniques de la colonne (base)
     base_unique_values = series.dropna().unique()

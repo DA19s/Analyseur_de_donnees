@@ -364,6 +364,8 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
         const response = await apiFetch("/excel/get-column-values", {
           method: "POST",
           body: formData,
+          // Timeout to surface slow network/timeouts instead of opaque "Failed to fetch"
+          signal: AbortSignal.timeout(15000)
         })
 
         if (!response.ok) {
@@ -434,6 +436,7 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
           const response = await apiFetch("/excel/get-column-values", {
             method: "POST",
             body: formData,
+            signal: AbortSignal.timeout(20000)
           })
 
           if (!response.ok) {
