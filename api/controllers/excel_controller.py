@@ -226,6 +226,41 @@ async def get_column_unique_values(filename: str, column_name: str, search: Opti
         path = file_ref.get("path")
         try:
             engine = _select_engine(path)
+            # Si une pagination est demandée et qu'aucun cache n'existe encore,
+            # on réalise un calcul complet unique une seule fois (puis pagine depuis le cache)
+            if engine == 'openpyxl' and (offset or 0) > 0 and column_name not in file_ref.get("uniques_cache", {}):
+                col_df = pd.read_excel(path, usecols=[column_name], engine=engine)
+                if column_name not in col_df.columns:
+                    return {"error": f"La colonne '{column_name}' n'existe pas dans {filename}"}
+                series = col_df[column_name]
+                # Construire et mettre en cache la base complète
+                base_unique_values = series.dropna().unique()
+                base_converted_values = []
+                for val in base_unique_values:
+                    if pd.isna(val):
+                        base_converted_values.append(None)
+                    elif isinstance(val, (np.integer, np.floating)):
+                        base_converted_values.append(float(val) if isinstance(val, np.floating) else int(val))
+                    else:
+                        base_converted_values.append(str(val))
+                cache[column_name] = {"values": base_converted_values, "ts": pd.Timestamp.now().timestamp()}
+                # Poursuivre plus bas avec la logique commune de pagination sur base_converted_values
+                filtered_values = [v for v in base_converted_values if ("" if v is None else str(v)).lower().find((search or "").lower()) != -1] if search else base_converted_values
+                total_filtered = len(filtered_values)
+                start = max(0, int(offset or 0))
+                end = max(start, start + int(limit or 200)) if limit is not None else total_filtered
+                paged_values = filtered_values[start:end]
+                return {
+                    "filename": str(filename),
+                    "column_name": str(column_name),
+                    "unique_values": paged_values,
+                    "total_unique_values": len(base_converted_values),
+                    "filtered_total_unique_values": total_filtered,
+                    "offset": start,
+                    "limit": int(limit or 200),
+                    "has_more": end < total_filtered
+                }
+
             if engine == 'openpyxl' and path.lower().endswith('.xlsx'):
                 # Ultra-light streaming lecture avec openpyxl en mode read_only
                 wb = load_workbook(path, read_only=True, data_only=True)
