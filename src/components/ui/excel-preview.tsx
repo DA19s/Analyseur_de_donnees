@@ -170,6 +170,7 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
   const [columnSearchTerm, setColumnSearchTerm] = useState('')
   const [explanatorySearchTerm, setExplanatorySearchTerm] = useState('')
   const [dataSearchTerm, setDataSearchTerm] = useState('')
+  const [loadingValues, setLoadingValues] = useState<{ [columnName: string]: boolean }>({})
   
   // Nouveaux states pour gérer l'affichage des valeurs des colonnes
   const [expandedColumns, setExpandedColumns] = useState<{ [columnName: string]: boolean }>({})
@@ -178,6 +179,32 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
   
   // État pour le mode de traitement des variables à expliquer
   const [treatmentMode, setTreatmentMode] = useState<'independent' | 'together'>('independent')
+  
+  // Helper: charge les valeurs d'une colonne de façon asynchrone
+  const fetchColumnValues = async (columnName: string, filename: string) => {
+    try {
+      const formData = new FormData()
+      formData.append("filename", filename)
+      formData.append("column_name", columnName)
+      const response = await fetch("http://localhost:8000/excel/get-column-values", {
+        method: "POST",
+        body: formData,
+      })
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(`Erreur HTTP: ${response.status} - ${errorText}`)
+      }
+      const result = await response.json()
+      setColumnValues(prev => ({
+        ...prev,
+        [columnName]: result.unique_values
+      }))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur lors du chargement des valeurs")
+    } finally {
+      setLoadingValues(prev => ({ ...prev, [columnName]: false }))
+    }
+  }
 
   // Vérifier le statut du serveur au chargement
   useEffect(() => {
@@ -345,51 +372,18 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
     if (!previewData) return
 
     const isExpanded = expandedColumns[columnName]
+    const nextExpanded = !isExpanded
+
+    // Ouvrir/fermer immédiatement pour feedback instantané
+    setExpandedColumns(prev => ({ ...prev, [columnName]: nextExpanded }))
     
-    if (!isExpanded && !columnValues[columnName]) {
-      // Charger les valeurs de la colonne depuis l'API
-      try {
-
-        const formData = new FormData()
-        formData.append("filename", previewData.filename)
-        formData.append("column_name", columnName)
-
-
-
-        const response = await fetch("http://localhost:8000/excel/get-column-values", {
-          method: "POST",
-          body: formData,
-        })
-
-        if (!response.ok) {
-          const errorText = await response.text()
-
-          throw new Error(`Erreur HTTP: ${response.status} - ${errorText}`)
-        }
-
-        const result = await response.json()
-
-        
-        setColumnValues(prev => ({
-          ...prev,
-          [columnName]: result.unique_values
-        }))
-        
-
-      } catch (err) {
-
-        setError(err instanceof Error ? err.message : "Erreur lors du chargement des valeurs")
-        return
-      }
+    // Si ouverture et données manquantes, afficher spinner tout de suite et lancer le fetch au tick suivant
+    if (nextExpanded && !columnValues[columnName]) {
+      setLoadingValues(prev => ({ ...prev, [columnName]: true }))
+      setTimeout(() => {
+        fetchColumnValues(columnName, previewData.filename)
+      }, 0)
     }
-
-    // Basculer l'état d'expansion
-    setExpandedColumns(prev => ({
-      ...prev,
-      [columnName]: !isExpanded
-    }))
-    
-
   }
 
   // Fonction pour gérer la sélection de la checkbox "Variable à expliquer"
@@ -417,6 +411,7 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
       // Si on coche la checkbox, charger les valeurs si elles ne sont pas encore disponibles
       if (!columnValues[columnName]) {
         try {
+          setLoadingValues(prev => ({ ...prev, [columnName]: true }))
 
           const formData = new FormData()
           formData.append("filename", previewData?.filename || '') // Use optional chaining
@@ -447,6 +442,8 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
 
           setError(err instanceof Error ? err.message : "Erreur lors du chargement des valeurs")
           return
+        } finally {
+          setLoadingValues(prev => ({ ...prev, [columnName]: false }))
         }
       } else {
         // Si les valeurs sont déjà disponibles, cocher toutes les valeurs
@@ -864,8 +861,10 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
                           </label>
                         </div>
                         
-                        {/* Icône d'expansion */}
-                        {expandedColumns[column] ? (
+                        {/* Icône d'expansion ou spinner */}
+                        {loadingValues[column] ? (
+                          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-green-600" />
+                        ) : expandedColumns[column] ? (
                           <ChevronDown className="h-5 w-5 text-green-600" />
                         ) : (
                           <ChevronRight className="h-5 w-5 text-green-600" />
@@ -902,7 +901,12 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
                         </div>
                         
                         {/* Affichage des valeurs uniques */}
-                        {columnValues[column] ? (
+                        {loadingValues[column] ? (
+                          <div className="text-center py-4">
+                            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-green-600 mx-auto mb-2"></div>
+                            <p className="text-sm text-gray-500">Chargement des valeurs...</p>
+                          </div>
+                        ) : columnValues[column] ? (
                           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2 max-h-64 overflow-y-auto">
                             {columnValues[column]
                               .filter((value: any) => 
@@ -925,16 +929,7 @@ export default function ExcelPreview({ onStepChange }: ExcelPreviewProps) {
                             ))}
                           </div>
                         ) : (
-                          <div className="text-center py-4">
-                            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-green-600 mx-auto mb-2"></div>
-                            <p className="text-sm text-gray-500">Chargement des valeurs...</p>
-                            <p className="text-xs text-gray-400 mt-1">
-                              Debug: expandedColumns[{column}] = {String(expandedColumns[column])}
-                            </p>
-                            <p className="text-xs text-gray-400">
-                              Debug: columnValues[{column}] = {String(columnValues[column])}
-                            </p>
-                          </div>
+                          <div className="text-center py-4 text-gray-500 text-sm">Aucune valeur trouvée</div>
                         )}
                         
                         {/* Résumé de la sélection */}

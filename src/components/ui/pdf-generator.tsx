@@ -612,34 +612,66 @@ export default function PDFGenerator({
                 leaves = leaves.sort((a, b) => (b.percentage || 0) - (a.percentage || 0))
 
                 const pctText = (p: number) => `${(p || 0).toFixed(2)}%`
-                const addLine = (text: string) => {
-                  const needed = 6
+                const baseMarginLeft = 20
+                const baseMarginRight = 20
+                const lineHeight = 6
+                const maxX = pageWidth - baseMarginRight
+
+                const ensureSpace = (needed = lineHeight) => {
                   if (yPosition + needed > pageHeight - 10) {
                     pdf.addPage()
                     yPosition = 20
                   }
-                  pdf.text(text, 20, yPosition)
-                  yPosition += needed
                 }
+
+                const addLine = (text: string) => {
+                  ensureSpace()
+                  let x = baseMarginLeft
+                  // Wrap words to avoid overflow/overlap
+                  const tokens = text.split(/(\s+)/)
+                  tokens.forEach(tok => {
+                    const w = pdf.getTextWidth(tok)
+                    if (x + w > maxX) {
+                      yPosition += lineHeight
+                      ensureSpace()
+                      x = baseMarginLeft
+                    }
+                    pdf.text(tok, x, yPosition)
+                    x += w
+                  })
+                  yPosition += lineHeight
+                }
+
                 const addColoredLine = (text: string, color: [number, number, number]) => {
                   pdf.setTextColor(color[0], color[1], color[2])
                   addLine(text)
                   pdf.setTextColor(0, 0, 0)
                 }
+
+                // Render multiple colored segments with wrapping across page width
                 const addRichLine = (segments: Array<{ text: string; color: [number, number, number] }>) => {
-                  const needed = 6
-                  if (yPosition + needed > pageHeight - 10) {
-                    pdf.addPage()
-                    yPosition = 20
+                  ensureSpace()
+                  let x = baseMarginLeft
+                  const writeToken = (txt: string, color: [number, number, number]) => {
+                    const parts = txt.split(/(\s+)/)
+                    for (const part of parts) {
+                      const w = pdf.getTextWidth(part)
+                      if (x + w > maxX) {
+                        // new line
+                        yPosition += lineHeight
+                        ensureSpace()
+                        x = baseMarginLeft
+                      }
+                      pdf.setTextColor(color[0], color[1], color[2])
+                      pdf.text(part, x, yPosition)
+                      x += w
+                    }
                   }
-                  let x = 20
-                  segments.forEach(seg => {
-                    pdf.setTextColor(seg.color[0], seg.color[1], seg.color[2])
-                    pdf.text(seg.text, x, yPosition)
-                    x += pdf.getTextWidth(seg.text)
-                  })
+                  for (const seg of segments) {
+                    writeToken(seg.text, seg.color)
+                  }
                   pdf.setTextColor(0, 0, 0)
-                  yPosition += needed
+                  yPosition += lineHeight
                 }
                 const colorForValue = (val: string): [number, number, number] => {
                   const v = (val || '').toLowerCase().trim()
